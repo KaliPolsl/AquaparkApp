@@ -1,0 +1,470 @@
+﻿@page "/panel-sprzedawcy"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+
+@using System.Timers
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using AquaparkApp.Models.DTOs
+@using Microsoft.AspNetCore.Authorization
+
+@inject IKlientService KlientService
+@inject IOfertaCennikowaService OfertaService
+@inject IZnizkaService ZnizkaService
+@inject ITransakcjaService TransakcjaService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Panel Sprzedawcy</PageTitle>
+
+<div class="container-fluid mt-3">
+    <div class="row g-3">
+
+        <!-- ======================================= -->
+        <!-- KOLUMNA 1: KLIENT                       -->
+        <!-- ======================================= -->
+        <div class="col-lg-3">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header fw-bold">1. Wybierz Klienta</div>
+                <div class="card-body">
+                    <div class="input-group mb-3">
+                        <input value="@searchTermKlienta" @oninput="OnKlientSearchChanged" class="form-control" placeholder="Szukaj po ID, nazwisku..." disabled="@(aktywnyKlient != null)" />
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-start mb-3">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => pokażModalDodawania = true" disabled="@(aktywnyKlient != null)">
+                            <span class="bi bi-person-plus-fill"></span> Dodaj nowego klienta
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="WybierzKlientaAnonimowego" disabled="@(aktywnyKlient != null)">
+                            <span class="bi bi-person-slash"></span> Klient anonimowy
+                        </button>
+                    </div>
+
+                    @if (aktywnyKlient == null)
+                    {
+                        @if (czyPrzetwarzaWyszukiwanie)
+                        {
+                            <div class="text-center"><div class="spinner-border spinner-border-sm"></div></div>
+                        }
+                        else if (wynikiWyszukiwaniaKlientow != null)
+                        {
+                            <ul class="list-group">
+                                @foreach (var klient in wynikiWyszukiwaniaKlientow)
+                                {
+                                    <li class="list-group-item list-group-item-action" @onclick="() => WybierzKlienta(klient)">
+                                        @klient.Imię @klient.Nazwisko (ID: @klient.Id)
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
+                    else
+                    {
+                        <div class="alert alert-success">
+                            <h5 class="alert-heading">Obsługiwany Klient:</h5>
+                            <p>@aktywnyKlient.Imię @aktywnyKlient.Nazwisko</p>
+                            <hr>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="WyczyscKlienta">Zmień Klienta</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================================= -->
+        <!-- KOLUMNA 2: OFERTA I KOSZYK              -->
+        <!-- ======================================= -->
+        <div class="col-lg-5">
+            <div class="card h-100 shadow-sm @(aktywnyKlient == null ? "bg-light" : "")">
+                <div class="card-header fw-bold">2. Skompletuj Zamówienie</div>
+                <div class="card-body" style="opacity: @(aktywnyKlient == null ? 0.5 : 1)">
+                    <fieldset disabled="@(aktywnyKlient == null)">
+                        <h6>Dostępne Oferty</h6>
+                        <div class="list-group mb-3" style="max-height: 200px; overflow-y: auto;">
+                            @foreach (var oferta in dostepneOferty)
+                            {
+                                <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" @onclick="() => DodajDoKoszyka(oferta)">
+                                    @oferta.NazwaOferty
+                                    <span class="badge bg-primary rounded-pill">@oferta.CenaPodstawowa.ToString("C")</span>
+                                </button>
+                            }
+                        </div>
+
+                        <h6>Koszyk</h6>
+                        @if (koszyk.Any())
+                        {
+                            <table class="table table-sm">
+                                <tbody>
+                                    @foreach (var item in koszyk)
+                                    {
+                                        <tr>
+                                            <td>@item.NazwaOferty</td>
+                                            <td>@item.CenaPodstawowa.ToString("C")</td>
+                                            <td><button class="btn btn-xs btn-outline-danger border-0" @onclick="() => UsunZKoszyka(item)"><span class="bi bi-x-circle"></span></button></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <p class="text-muted"><em>Koszyk jest pusty.</em></p>
+                        }
+                    </fieldset>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======================================= -->
+        <!-- KOLUMNA 3: PŁATNOŚĆ                     -->
+        <!-- ======================================= -->
+        <div class="col-lg-4">
+            <div class="card h-100 shadow-sm @(!koszyk.Any() ? "bg-light" : "")">
+                <div class="card-header fw-bold">3. Finalizuj Transakcję</div>
+                <div class="card-body" style="opacity: @(!koszyk.Any() ? 0.5 : 1)">
+                    <fieldset disabled="@(!koszyk.Any())">
+                        <dl class="row">
+                            <dt class="col-8">Suma częściowa:</dt>
+                            <dd class="col-4 text-end">@sumaCzesciowa.ToString("C")</dd>
+
+                            <dt class="col-8">Zniżka:</dt>
+                            <dd class="col-4 text-end text-danger">- @kwotaRabatu.ToString("C")</dd>
+
+                            <dt class="col-8 fs-4">Do zapłaty:</dt>
+                            <dd class="col-4 fs-4 text-end fw-bold">@kwotaDoZaplaty.ToString("C")</dd>
+                        </dl>
+
+                        <div class="mb-3">
+                            <label class="form-label">Zastosuj zniżkę:</label>
+                            <select class="form-select" @onchange="ZastosujZnizke">
+                                <option value="">- Brak -</option>
+                                @foreach (var znizka in dostepneZnizki)
+                                {
+                                    <option value="@znizka.Id">
+                                        @znizka.Opis (
+                                        @(znizka.TypZnizki == "Procentowa"
+                                            ? znizka.Wartosc + "%"
+                                            : znizka.Wartosc.ToString("C"))
+                                        )
+                                    </option>
+                                }
+
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Metoda płatności:</label>
+                            <div class="btn-group w-100">
+                                <button class="btn @(wybranaMetodaPlatnosci == "Karta" ? "btn-success" : "btn-outline-secondary")" @onclick="@(() => wybranaMetodaPlatnosci = "Karta")">Karta</button>
+                                <button class="btn @(wybranaMetodaPlatnosci == "Gotówka" ? "btn-success" : "btn-outline-secondary")" @onclick="@(() => wybranaMetodaPlatnosci = "Gotówka")">Gotówka</button>
+                                <button class="btn @(wybranaMetodaPlatnosci == "BLIK" ? "btn-success" : "btn-outline-secondary")" @onclick="@(() => wybranaMetodaPlatnosci = "BLIK")">BLIK</button>
+                            </div>
+                        </div>
+
+                        @if (wybranaMetodaPlatnosci == "Gotówka")
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">Otrzymano gotówkę:</label>
+                                <div class="input-group">
+                                    <InputNumber @bind-Value="otrzymanaGotowka" class="form-control" placeholder="Wpisz kwotę..." />
+                                    <span class="input-group-text">zł</span>
+                                </div>
+                            </div>
+
+                            @if (otrzymanaGotowka.HasValue && otrzymanaGotowka < kwotaDoZaplaty)
+                            {
+                                <div class="alert alert-warning p-2">Kwota jest niewystarczająca.</div>
+                            }
+
+                            <dl class="row">
+                                <dt class="col-8">Reszta do wydania:</dt>
+                                <dd class="col-4 text-end fw-bold">@resztaDoWydania.ToString("C")</dd>
+                            </dl>
+                        }
+                        <!-- === KONIEC NOWEGO BLOKU === -->
+
+                        <button class="btn btn-lg btn-success w-100" @onclick="ZatwierdzTransakcje" disabled="@czyPrzetwarzaTransakcje || !CzyMoznaZatwierdzic">
+                            <!-- ... zawartość przycisku ... -->
+                        </button>
+
+                        <button class="btn btn-lg btn-success w-100" @onclick="ZatwierdzTransakcje" disabled="@(czyPrzetwarzaTransakcje || !CzyMoznaZatwierdzic)">
+                            @if (czyPrzetwarzaTransakcje)
+                            {
+                                <span class="spinner-border spinner-border-sm">Zapisywanie...</span>
+                                
+                                            }
+                            else
+                            {
+                                <span class="bi bi-check-circle-fill">Zatwierdź Transakcję</span>
+                                
+                                            }
+                        </button>
+
+                        @if (komunikatTransakcji != null)
+                        {
+                            <div class="alert @(czyBladTransakcji ? "alert-danger" : "alert-success") mt-3">@komunikatTransakcji</div>
+                        }
+                    </fieldset>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- === NOWY MODAL DODAWANIA KLIENTA === -->
+    @if (pokażModalDodawania)
+    {
+        <div class="modal fade show" style="display:block" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Dodaj Nowego Klienta</h5>
+                        <button type="button" class="btn-close" @onclick="() => pokażModalDodawania = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <EditForm Model="nowyKlient" OnValidSubmit="DodajNowegoKlientaZModala">
+                            <DataAnnotationsValidator />
+                            <div class="mb-3">
+                                <label class="form-label">Imię:</label>
+                                <InputText class="form-control" @bind-Value="nowyKlient.Imię" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Nazwisko:</label>
+                                <InputText class="form-control" @bind-Value="nowyKlient.Nazwisko" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Email:</label>
+                                <InputText type="email" class="form-control" @bind-Value="nowyKlient.Email" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Telefon:</label>
+                                <InputText class="form-control" @bind-Value="nowyKlient.NrTelefonu" />
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="() => pokażModalDodawania = false">Anuluj</button>
+                                <button type="submit" class="btn btn-primary">Zapisz i wybierz klienta</button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+
+</div>
+
+
+@code {
+    // --- Stan Kolumny 1: Klient ---
+    private string? searchTermKlienta;
+    private List<Klient>? wynikiWyszukiwaniaKlientow;
+    private Klient? aktywnyKlient;
+    private Timer? debounceTimer;
+
+    // --- Stan Kolumny 2: Oferta i Koszyk ---
+    private List<OfertaCennikowa> dostepneOferty = new();
+    private List<PozycjaKoszyka> koszyk = new();
+
+    // --- Stan Kolumny 3: Płatność ---
+    private List<Znizka> dostepneZnizki = new();
+    private Znizka? wybranaZnizka;
+    private string? wybranaMetodaPlatnosci;
+    private decimal? otrzymanaGotowka;
+    private bool pokażModalDodawania = false;
+    private Klient nowyKlient = new();
+
+    // --- Flagi i komunikaty ---
+    private bool czyPrzetwarzaWyszukiwanie;
+    private bool czyPrzetwarzaTransakcje;
+    private bool czyBladTransakcji;
+    private string? komunikatTransakcji;
+
+    // --- Obliczone właściwości ---
+    private decimal sumaCzesciowa => koszyk.Sum(p => p.CenaPodstawowa); // Używamy ceny bazowej
+    private decimal kwotaDoZaplaty => Math.Max(0, sumaCzesciowa - kwotaRabatu);
+    private decimal resztaDoWydania => (otrzymanaGotowka.HasValue && otrzymanaGotowka.Value > kwotaDoZaplaty)
+                                        ? otrzymanaGotowka.Value - kwotaDoZaplaty
+                                        : 0;
+    private decimal kwotaRabatu
+    {
+        get
+        {
+            if (wybranaZnizka == null) return 0;
+
+            decimal rabat = 0;
+            if (wybranaZnizka.TypZnizki == "Procentowa")
+            {
+                // Oblicz rabat jako procent od sumy
+                rabat = sumaCzesciowa * (wybranaZnizka.Wartosc / 100);
+            }
+            else if (wybranaZnizka.TypZnizki == "Kwotowa")
+            {
+                rabat = wybranaZnizka.Wartosc;
+            }
+            return rabat;
+        }
+    }
+
+    // --- Klasa pomocnicza dla koszyka ---
+    public class PozycjaKoszyka
+    {
+        public int OfertaId { get; set; }
+        public string NazwaOferty { get; set; } = "";
+        public decimal CenaPodstawowa { get; set; } // Przechowujemy cenę bazową
+        public decimal CenaKoncowa { get; set; } // I cenę po zniżce
+    }
+
+    private async Task WybierzKlientaAnonimowego()
+    {
+        var klient = new Klient
+            {
+                // Możemy dodać specjalne oznaczenie, np. imię i nazwisko jako "Anonimowy"
+                // lub zostawić puste, jeśli baza na to pozwala.
+                Imię = "Klient",
+                Nazwisko = "Anonimowy"
+            };
+
+        // Zapisujemy go w bazie, żeby mieć jego ID do transakcji
+        var noweId = await KlientService.DodajKlientaAsync(klient);
+        klient.Id = noweId;
+
+        // Ustawiamy go jako aktywnego klienta
+        WybierzKlienta(klient);
+    }
+
+    private async Task DodajNowegoKlientaZModala()
+    {
+        // Zapisujemy klienta w bazie
+        var noweId = await KlientService.DodajKlientaAsync(nowyKlient);
+        nowyKlient.Id = noweId;
+
+        // Ustawiamy go jako aktywnego
+        WybierzKlienta(nowyKlient);
+
+        // Resetujemy formularz i zamykamy modal
+        nowyKlient = new();
+        pokażModalDodawania = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        dostepneOferty = await OfertaService.PobierzWszystkieOfertyAsync();
+        dostepneZnizki = await ZnizkaService.PobierzAktywneZnizkiAsync();
+        debounceTimer = new Timer(300);
+        debounceTimer.Elapsed += async (s, e) => await WyszukajKlientow();
+        debounceTimer.AutoReset = false;
+    }
+
+    private void OnKlientSearchChanged(ChangeEventArgs e)
+    {
+        searchTermKlienta = e.Value?.ToString();
+        czyPrzetwarzaWyszukiwanie = true;
+        debounceTimer?.Stop();
+        debounceTimer?.Start();
+    }
+
+    private async Task WyszukajKlientow()
+    {
+        if (!string.IsNullOrWhiteSpace(searchTermKlienta))
+        {
+            wynikiWyszukiwaniaKlientow = await KlientService.WyszukajKlientowAsync(searchTermKlienta);
+        }
+        czyPrzetwarzaWyszukiwanie = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void WybierzKlienta(Klient klient)
+    {
+        aktywnyKlient = klient;
+        searchTermKlienta = null;
+        wynikiWyszukiwaniaKlientow = null;
+    }
+
+    private void WyczyscKlienta()
+    {
+        aktywnyKlient = null;
+        koszyk.Clear();
+        wybranaZnizka = null;
+        wybranaMetodaPlatnosci = null;
+        komunikatTransakcji = null;
+    }
+
+    private void DodajDoKoszyka(OfertaCennikowa oferta)
+    {
+        koszyk.Add(new PozycjaKoszyka
+            {
+                OfertaId = oferta.Id,
+                NazwaOferty = oferta.NazwaOferty,
+                CenaPodstawowa = oferta.CenaPodstawowa,
+                CenaKoncowa = oferta.CenaPodstawowa // Na razie równe, zniżka jest od całości
+            });
+    }
+
+    private void UsunZKoszyka(PozycjaKoszyka pozycja)
+    {
+        koszyk.Remove(pozycja);
+    }
+
+    private void ZastosujZnizke(ChangeEventArgs e)
+    {
+        var znizkaIdStr = e.Value?.ToString();
+        if (int.TryParse(znizkaIdStr, out int znizkaId))
+        {
+            wybranaZnizka = dostepneZnizki.FirstOrDefault(z => z.Id == znizkaId);
+        }
+        else
+        {
+            wybranaZnizka = null;
+        }
+    }
+
+    private async Task ZatwierdzTransakcje()
+    {
+        if (aktywnyKlient == null || !koszyk.Any() || wybranaMetodaPlatnosci == null) return;
+
+        czyPrzetwarzaTransakcje = true;
+        komunikatTransakcji = null;
+
+        try
+        {
+            var pozycjeDto = koszyk.Select(p => new PozycjaKoszykaDto { OfertaId = p.OfertaId, Ilosc = 1 }).ToList();
+
+            var platnoscId = await TransakcjaService.ZrealizujTransakcjeAsync(aktywnyKlient.Id, pozycjeDto, wybranaMetodaPlatnosci, wybranaZnizka?.Id);
+
+            czyBladTransakcji = false;
+            komunikatTransakcji = $"Transakcja zakończona pomyślnie! Utworzono płatność o ID: {platnoscId}";
+
+            // Reset panelu po 2 sekundach
+            await Task.Delay(2000);
+            WyczyscKlienta();
+        }
+        catch (Exception ex)
+        {
+            czyBladTransakcji = true;
+            komunikatTransakcji = $"Błąd transakcji: {ex.Message}";
+        }
+        finally
+        {
+            czyPrzetwarzaTransakcje = false;
+        }
+    }
+
+    private bool CzyMoznaZatwierdzic
+    {
+        get
+        {
+            if (wybranaMetodaPlatnosci == null) return false;
+            if (wybranaMetodaPlatnosci == "Gotówka")
+            {
+                return otrzymanaGotowka.HasValue && otrzymanaGotowka.Value >= kwotaDoZaplaty;
+            }
+            return true; // Dla Karty i BLIK zawsze można
+        }
+    }
+
+    public void Dispose()
+    {
+        debounceTimer?.Dispose();
+    }
+}
+

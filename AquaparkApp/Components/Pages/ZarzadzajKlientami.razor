@@ -1,0 +1,214 @@
+﻿@page "/zarzadzaj-klientami"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable // Potrzebne do prawidłowego zwolnienia Timera
+
+@using System.Timers
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@inject IKlientService KlientService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Zarządzanie Klientami</PageTitle>
+
+<div class="container mt-4">
+    <h1>Zarządzanie Klientami</h1>
+    <hr />
+
+    <!-- Sekcja Dodawania Nowego Klienta -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h4>Dodaj Nowego Klienta</h4>
+        </div>
+        <div class="card-body">
+            <EditForm Model="@nowyKlient" OnValidSubmit="HandleNewKlientSubmit" FormName="DodajKlienta">
+                <DataAnnotationsValidator />
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="imie" class="form-label">Imię:</label>
+                        <InputText id="imie" class="form-control" @bind-Value="nowyKlient.Imię" />
+                        <ValidationMessage For="@(() => nowyKlient.Imię)" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="nazwisko" class="form-label">Nazwisko:</label>
+                        <InputText id="nazwisko" class="form-control" @bind-Value="nowyKlient.Nazwisko" />
+                        <ValidationMessage For="@(() => nowyKlient.Nazwisko)" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="nrTelefonu" class="form-label">Numer telefonu (opcjonalnie):</label>
+                        <InputText id="nrTelefonu" class="form-control" @bind-Value="nowyKlient.NrTelefonu" />
+                        <ValidationMessage For="@(() => nowyKlient.NrTelefonu)" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="email" class="form-label">Email (opcjonalnie):</label>
+                        <InputText id="email" type="email" class="form-control" @bind-Value="nowyKlient.Email" />
+                        <ValidationMessage For="@(() => nowyKlient.Email)" />
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(komunikatDodawania))
+                {
+                    <div class="alert @(czyBladDodawania ? "alert-danger" : "alert-success")" role="alert">
+                        @komunikatDodawania
+                    </div>
+                }
+
+                <button type="submit" class="btn btn-success" disabled="@czyPrzetwarzaDodawanie">
+                    @if (czyPrzetwarzaDodawanie)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span> Dodawanie...</span>
+                    }
+                    else
+                    {
+                        <span class="bi bi-plus-circle"></span>
+                        <span> Dodaj Klienta</span>
+                    }
+                </button>
+            </EditForm>
+        </div>
+    </div>
+
+    <!-- Sekcja Wyszukiwania Klientów -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-info text-white">
+            <h4>Wyszukaj Klienta</h4>
+        </div>
+        <div class="card-body">
+            <!-- SEKCJA WYSZUKIWANIA - POPRAWIONA WERSJA -->
+            <div class="input-group mb-3">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input value="@searchTerm" @oninput="OnSearchTermChanged" class="form-control" placeholder="Wpisz imię, nazwisko, telefon, email lub ID klienta..." />
+            </div>
+
+            @if (czyPrzetwarzaWyszukiwanie)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Szukanie...</span>
+                    </div>
+                </div>
+            }
+            else if (wynikiWyszukiwania == null && !string.IsNullOrWhiteSpace(searchTerm))
+            {
+                <div class="alert alert-warning">Nie znaleziono klientów pasujących do kryteriów.</div>
+            }
+            else if (wynikiWyszukiwania != null)
+            {
+                <ul class="list-group">
+                    @foreach (var klient in wynikiWyszukiwania)
+                    {
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>@klient.Imię @klient.Nazwisko</strong><br />
+                                <small class="text-muted">ID: @klient.Id | Tel: @(klient.NrTelefonu ?? "-")</small>
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-primary" @onclick="() => PrzejdzDoProfilu(klient.Id)">
+                                    <span class="bi bi-person-lines-fill"></span> Profil
+                                </button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+</div>
+
+
+@code {
+    private Klient nowyKlient = new();
+    private List<Klient>? wynikiWyszukiwania;
+    private string? searchTerm;
+
+    // Pola do obsługi stanu UI
+    private bool czyPrzetwarzaDodawanie = false;
+    private bool czyPrzetwarzaWyszukiwanie = false;
+    private string? komunikatDodawania;
+    private bool czyBladDodawania = false;
+
+    // Timer do opóźniania wyszukiwania (debouncing)
+    private Timer? debounceTimer;
+    private readonly int debounceMilliseconds = 500;
+
+    protected override void OnInitialized()
+    {
+        // Inicjalizujemy timer, ale go nie uruchamiamy
+        debounceTimer = new Timer(debounceMilliseconds);
+        debounceTimer.Elapsed += async (sender, e) => await HandleTimerElapsed();
+        debounceTimer.AutoReset = false; // Chcemy, żeby uruchomił się tylko raz po upływie czasu
+    }
+
+    private async Task HandleNewKlientSubmit()
+    {
+        czyPrzetwarzaDodawanie = true;
+        komunikatDodawania = null;
+
+        try
+        {
+            var nowyId = await KlientService.DodajKlientaAsync(nowyKlient);
+            komunikatDodawania = $"Pomyślnie dodano klienta: {nowyKlient.Imię} {nowyKlient.Nazwisko} (ID: {nowyId})";
+            czyBladDodawania = false;
+            nowyKlient = new(); // Resetuj formularz
+        }
+        catch (Exception ex)
+        {
+            komunikatDodawania = $"Wystąpił błąd podczas dodawania klienta: {ex.Message}";
+            czyBladDodawania = true;
+        }
+        finally
+        {
+            czyPrzetwarzaDodawanie = false;
+        }
+    }
+
+    // Ta metoda jest wywoływana przy każdej zmianie w polu input
+    private void OnSearchTermChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString();
+        czyPrzetwarzaWyszukiwanie = true; // Pokaż spinner od razu
+
+        // Resetujemy i uruchamiamy timer od nowa
+        debounceTimer?.Stop();
+        debounceTimer?.Start();
+    }
+
+    // Ta metoda zostanie wywołana, gdy timer zakończy odliczanie
+    private async Task HandleTimerElapsed()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            wynikiWyszukiwania = null;
+            czyPrzetwarzaWyszukiwanie = false;
+        }
+        else
+        {
+            wynikiWyszukiwania = await KlientService.WyszukajKlientowAsync(searchTerm);
+            if (!wynikiWyszukiwania.Any())
+            {
+                // Ustawiamy null, żeby wyświetlić komunikat "Nie znaleziono"
+                wynikiWyszukiwania = null;
+            }
+            czyPrzetwarzaWyszukiwanie = false;
+        }
+
+        // Musimy poinformować Blazora, że stan się zmienił w wątku timera
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void PrzejdzDoProfilu(int klientId)
+    {
+        NavigationManager.NavigateTo($"/klient-profil/{klientId}");
+    }
+
+    // Prawidłowe zwolnienie zasobów timera, gdy komponent jest niszczony
+    public void Dispose()
+    {
+        debounceTimer?.Dispose();
+    }
+}

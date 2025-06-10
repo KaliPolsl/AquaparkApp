@@ -1,0 +1,169 @@
+﻿@page "/klient-profil/{KlientId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@inject IKlientService KlientService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Profil Klienta - @(klient?.Imię) @(klient?.Nazwisko)</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(komunikatStatusu))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <span class="bi bi-check-circle-fill me-2"></span>
+        @komunikatStatusu
+        <button type="button" class="btn-close" @onclick="() => komunikatStatusu = null" aria-label="Close"></button>
+    </div>
+}
+
+@if (klient == null)
+{
+    <div class="text-center mt-5">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Ładowanie...</span>
+        </div>
+        <p class="mt-2">Ładowanie profilu klienta...</p>
+    </div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0"><span class="bi bi-person-vcard-fill me-2"></span>Profil Klienta</h1>
+        <div>
+            <button class="btn btn-secondary" @onclick="WrocDoListy"><span class="bi bi-arrow-left-circle me-1"></span> Wróć do listy</button>
+            <button class="btn btn-warning" @onclick="PrzejdzDoEdycji"><span class="bi bi-pencil-square me-1"></span> Edytuj</button>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">@klient.Imię @klient.Nazwisko</h4>
+        </div>
+        <div class="card-body p-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><span class="bi bi-info-circle me-2"></span>Dane Podstawowe</h5>
+                    <dl class="row">
+                        <dt class="col-sm-4">ID Klienta:</dt>
+                        <dd class="col-sm-8">@klient.Id</dd>
+
+                        <dt class="col-sm-4">Email:</dt>
+                        <dd class="col-sm-8">@(string.IsNullOrWhiteSpace(klient.Email) ? "<em>Brak</em>" : klient.Email)</dd>
+
+                        <dt class="col-sm-4">Telefon:</dt>
+                        <dd class="col-sm-8">@(string.IsNullOrWhiteSpace(klient.NrTelefonu) ? "<em>Brak</em>" : klient.NrTelefonu)</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><span class="bi bi-receipt-cutoff me-2"></span>Historia Zakupów</h5>
+                    @if (klient.ProduktyZakupione.Any())
+                    {
+                        <div class="list-group">
+                            @foreach (var produkt in klient.ProduktyZakupione.OrderByDescending(p => p.DataZakupu))
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">@produkt.Oferta.NazwaOferty</h6>
+                                        <small>@produkt.DataZakupu.ToString("d MMM yyyy")</small>
+                                    </div>
+                                    <p class="mb-1">Cena zakupu: @produkt.CenaZakupu.ToString("C")</p>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-light"><em>Brak historii zakupów.</em></div>
+                    }
+                </div>
+                <div class="col-md-6">
+                    <h5><span class="bi bi-water me-2"></span>Historia Wizyt</h5>
+                    @if (klient.Wizyty.Any())
+                    {
+                        <div class="list-group">
+                            @foreach (var wizyta in klient.Wizyty.OrderByDescending(w => w.CzasWejscia))
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">Wizyta</h6>
+                                        <small>@wizyta.CzasWejscia.ToString("g")</small>
+                                    </div>
+                                    <p class="mb-1">Status: <span class="badge bg-info">@wizyta.StatusWizyty.Nazwa</span></p>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-light"><em>Brak historii wizyt.</em></div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int KlientId { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Status { get; set; }
+
+    private Klient? klient;
+    private string? komunikatStatusu;
+
+    // Zmieniamy typ na IDisposable, aby łatwiej zarządzać timerem
+    private IDisposable? _komunikatTimer;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Status == "zaktualizowano")
+        {
+            komunikatStatusu = "Dane klienta zostały pomyślnie zaktualizowane!";
+
+            // Poprawna inicjalizacja System.Threading.Timer
+            // Definiujemy callback, który zostanie wykonany po upływie czasu
+            var timerCallback = new TimerCallback(_ =>
+            {
+                komunikatStatusu = null;
+                // Informujemy Blazor o zmianie z innego wątku
+                InvokeAsync(StateHasChanged);
+            });
+
+            // Tworzymy timer, który wykona callback po 3000ms (3 sekundy) tylko raz
+            _komunikatTimer = new Timer(timerCallback, null, 3000, Timeout.Infinite);
+
+            // Czyścimy parametr z URL, żeby komunikat nie pojawiał się przy odświeżaniu (F5)
+            NavigationManager.NavigateTo($"/klient-profil/{KlientId}", replace: true);
+        }
+
+        klient = await KlientService.PobierzKlientaZHistoriaAsync(KlientId);
+    }
+
+    private void PrzejdzDoEdycji()
+    {
+        NavigationManager.NavigateTo($"/klient-edycja/{KlientId}");
+    }
+
+    private void WrocDoListy()
+    {
+        NavigationManager.NavigateTo("/zarzadzaj-klientami");
+    }
+
+    // Dodajemy metodę Dispose, aby poprawnie zwolnić timer, gdy opuszczamy stronę
+    // To zapobiega wyciekom pamięci.
+    public void Dispose()
+    {
+        _komunikatTimer?.Dispose();
+    }
+}

@@ -1,0 +1,175 @@
+﻿@page "/zarzadzaj-opaskami"
+@attribute [Authorize] // Dostęp tylko dla personelu
+@rendermode InteractiveServer
+
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+@inject IOpaskaService OpaskaService
+
+<PageTitle>Zarządzanie Opaskami</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0"><span class="bi bi-person-badge me-2"></span>Zarządzanie Opaskami</h1>
+    </div>
+
+    <!-- Sekcja dodawania nowej opaski -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Dodaj nową opaskę</h5>
+        </div>
+        <div class="card-body">
+            <!-- --- ZMIANY TUTAJ --- -->
+            <EditForm Model="modelFormularza" OnValidSubmit="HandleDodajOpaske">
+                <DataAnnotationsValidator /> <!-- Teraz walidacja zadziała! -->
+                <div class="input-group">
+                    <InputText @bind-Value="modelFormularza.NumerOpaski" class="form-control" placeholder="Wpisz lub zeskanuj unikalny numer opaski..." />
+                    <button type="submit" class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(modelFormularza.NumerOpaski))">
+                        <span class="bi bi-plus-circle"></span> Dodaj
+                    </button>
+                </div>
+                <ValidationMessage For="@(() => modelFormularza.NumerOpaski)" /> <!-- Dodajemy komunikat walidacji -->
+            </EditForm>
+
+            @if (!string.IsNullOrWhiteSpace(komunikat))
+            {
+                <div class="alert @(czyBlad ? "alert-danger" : "alert-success") mt-3">@komunikat</div>
+            }
+        </div>
+    </div>
+
+    <!-- Tabela z listą opasek -->
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">Lista Opasek w Systemie</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Numer Opaski</th>
+                        <th>Status</th>
+                        <th>Data Wydania</th>
+                        <th>Data Wycofania</th>
+                        <th class="text-end">Akcje</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (opaski == null)
+                    {
+                        <tr><td colspan="5" class="text-center p-4"><div class="spinner-border spinner-border-sm"></div> Ładowanie...</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var opaska in opaski)
+                        {
+                            <tr>
+                                <td class="fw-bold">@opaska.NumerOpaski</td>
+                                <td><span class="badge @GetBadgeClassForStatus(opaska.Status)">@opaska.Status</span></td>
+                                <td>@opaska.DataWydania?.ToString("g")</td>
+                                <td>@(opaska.DataWycofania?.ToString("g") ?? "<em>-</em>")</td>
+                                <td class="text-end">
+                                    @if (opaska.Status == "Dostępna")
+                                    {
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="@(() => HandleZmienStatus(opaska.Id, " Zgubiona"))">Zgubiona</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="@(() => HandleZmienStatus(opaska.Id, " Wycofana"))">Wycofaj</button>
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+
+
+    private List<Opaska>? opaski;
+    //private string? nowyNumerOpaski;
+    private OpaskaFormModel modelFormularza = new();
+    private string? komunikat;
+    private bool czyBlad;
+
+    public class OpaskaFormModel
+    {
+        [Required(ErrorMessage = "Numer opaski jest wymagany.")]
+        [StringLength(50, ErrorMessage = "Numer opaski jest za długi.")]
+        public string? NumerOpaski { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ZaladujOpaski();
+    }
+
+    private async Task ZaladujOpaski()
+    {
+        try
+        {
+            opaski = await OpaskaService.PobierzWszystkieOpaskiAsync();
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd ładowania opasek: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    private async Task HandleDodajOpaske()
+    {
+        if (string.IsNullOrWhiteSpace(modelFormularza.NumerOpaski)) return;
+
+        try
+        {
+            // --- ZMIANA TUTAJ ---
+            // Używamy właściwości z naszego nowego modelu
+            await OpaskaService.DodajNowaOpaskeAsync(modelFormularza.NumerOpaski);
+            komunikat = $"Pomyślnie dodano opaskę o numerze: {modelFormularza.NumerOpaski}";
+            czyBlad = false;
+
+            // Resetujemy model formularza
+            modelFormularza = new();
+            await ZaladujOpaski();
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    private async Task HandleZmienStatus(int opaskaId, string nowyStatus)
+    {
+        try
+        {
+            await OpaskaService.ZmienStatusOpaskiAsync(opaskaId, nowyStatus);
+            komunikat = $"Pomyślnie zmieniono status opaski.";
+            czyBlad = false;
+            await ZaladujOpaski(); // Odśwież listę
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd zmiany statusu: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    private string GetBadgeClassForStatus(string status)
+    {
+        return status switch
+        {
+            "Dostępna" => "bg-success",
+            "Aktywna" => "bg-primary",
+            "Zgubiona" => "bg-danger",
+            "Wycofana" => "bg-secondary",
+            _ => "bg-dark"
+        };
+    }
+}

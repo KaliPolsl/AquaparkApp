@@ -1,0 +1,99 @@
+﻿@page "/cennik"
+@* Ta strona nie wymaga interaktywności, więc domyślnie użyje szybkiego Static SSR *@
+
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@inject IOfertaCennikowaService OfertaService
+
+<PageTitle>Cennik - Aquapark Słoneczna Fala</PageTitle>
+
+<div class="container mt-4">
+    <div class="text-center mb-5">
+        <h1 class="display-5 fw-bold">Oficjalny Cennik</h1>
+        <p class="lead text-muted">Zapoznaj się z naszą pełną ofertą biletów i karnetów.</p>
+    </div>
+
+    @if (ofertyPogrupowane == null)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Ładowanie...</span>
+            </div>
+            <p class="mt-2">Ładowanie cennika...</p>
+        </div>
+    }
+    else if (!ofertyPogrupowane.Any())
+    {
+        <div class="alert alert-info text-center">
+            <p class="mb-0">Przepraszamy, obecnie nie możemy wyświetlić cennika. Prosimy spróbować później.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var grupa in ofertyPogrupowane)
+        {
+            <h2 class="mb-3 mt-5 border-bottom pb-2">
+                <span class="@GetIconForType(grupa.Key) me-2"></span> @grupa.Key
+            </h2>
+            
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Nazwa Oferty</th>
+                            <th scope="col" class="d-none d-md-table-cell">Opis</th>
+                            <th scope="col" class="text-center">Limit Czasu</th>
+                            <th scope="col" class="text-center">Liczba Wejść</th>
+                            <th scope="col" class="text-end">Cena</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var oferta in grupa)
+                        {
+                            <tr>
+                                <td class="fw-bold">@oferta.NazwaOferty</td>
+                                <td class="d-none d-md-table-cell">@oferta.Opis</td>
+                                <td class="text-center">@(oferta.LimitCzasuMinuty.HasValue ? $"{oferta.LimitCzasuMinuty} min" : "<em>Brak</em>")</td>
+                                <td class="text-center">@(oferta.LiczbaWejsc.HasValue ? oferta.LiczbaWejsc.ToString() : "<em>Nielimitowane</em>")</td>
+                                <td class="text-end fs-5 fw-bold text-primary">@oferta.CenaPodstawowa.ToString("C")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IGrouping<string, OfertaCennikowa>[]? ofertyPogrupowane;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var wszystkieAktywneOferty = await OfertaService.PobierzWszystkieOfertyAsync();
+            
+            // Grupujemy oferty po ich typie (np. "Bilet", "Karnet")
+            ofertyPogrupowane = wszystkieAktywneOferty
+                                .GroupBy(o => o.Typ)
+                                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Błąd podczas ładowania cennika: {ex.Message}");
+            // Zostawiamy ofertyPogrupowane jako null, aby wyświetlić komunikat o błędzie
+        }
+    }
+
+    // Mała metoda pomocnicza do wyświetlania ikonki w zależności od typu oferty
+    private string GetIconForType(string typ)
+    {
+        return typ switch
+        {
+            "Bilet" => "bi bi-ticket-perforated-fill text-success",
+            "Karnet" => "bi bi-card-checklist text-info",
+            _ => "bi bi-tag-fill text-secondary"
+        };
+    }
+}

@@ -1,0 +1,198 @@
+﻿@page "/zarzadzaj-oferta"
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@inject IOfertaCennikowaService OfertaService
+@* @inject IZnizkaService ZnizkaService - dodamy później *@
+
+<PageTitle>Zarządzanie Ofertą</PageTitle>
+
+<h1 class="mb-4"><span class="bi bi-tools me-2"></span>Zarządzanie Ofertą i Zniżkami</h1>
+
+<!-- NAWIGACJA ZAKŁADEK -->
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <button class="nav-link @(aktywnaZakladka == "Cennik" ? "active" : "")" @onclick="@(() => aktywnaZakladka = " Cennik")">
+            <span class="bi bi-tags-fill me-1"></span> Cennik
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(aktywnaZakladka == "Zniżki" ? "active" : "")" @onclick="@(() => aktywnaZakladka = " Zniżki")">
+            <span class="bi bi-percent me-1"></span> Zniżki
+        </button>
+    </li>
+</ul>
+
+<!-- KONTENER NA ZAWARTOŚĆ ZAKŁADEK -->
+@if (aktywnaZakladka == "Cennik")
+{
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Zarządzanie Cennikiem</h5>
+            <button class="btn btn-primary" @onclick="() => OtworzModalOferty()">
+                <span class="bi bi-plus-circle"></span> Dodaj Nową Ofertę
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Nazwa</th>
+                        <th>Typ</th>
+                        <th>Cena</th>
+                        <th>Status</th>
+                        <th class="text-end">Akcje</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (oferty == null)
+                    {
+                        <tr><td colspan="5" class="text-center p-4">Ładowanie...</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var oferta in oferty)
+                        {
+                            <tr>
+                                <td class="fw-bold">@oferta.NazwaOferty</td>
+                                <td><span class="badge bg-info">@oferta.Typ</span></td>
+                                <td>@oferta.CenaPodstawowa.ToString("C")</td>
+                                <td>
+                                    @if (oferta.ObowiazujeDo != null && oferta.ObowiazujeDo < DateTime.Now)
+                                    {
+                                        <span class="badge bg-secondary">Nieaktywna</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">Aktywna</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-warning" @onclick="() => OtworzModalOferty(oferta)">Edytuj</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else if (aktywnaZakladka == "Zniżki")
+{
+    <!-- Tutaj w przyszłości będzie zawartość zakładki Zniżki -->
+    <p>Zarządzanie zniżkami - w budowie...</p>
+}
+
+
+<!-- MODAL DO DODAWANIA/EDYCJI OFERTY -->
+@if (czyModalOfertyOtwarty)
+{
+    <div class="modal fade show" style="display:block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <EditForm Model="edytowanaOferta" OnValidSubmit="ZapiszOferte">
+                    <DataAnnotationsValidator />
+                    <div class="modal-header">
+                        <h5 class="modal-title">@(edytowanaOferta.Id == 0 ? "Dodaj Nową Ofertę" : "Edytuj Ofertę")</h5>
+                        <button type="button" class="btn-close" @onclick="ZamknijModalOferty"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Pola formularza -->
+                        <div class="mb-3">
+                            <label class="form-label">Nazwa Oferty</label>
+                            <InputText class="form-control" @bind-Value="edytowanaOferta.NazwaOferty" />
+                            <ValidationMessage For="@(() => edytowanaOferta.NazwaOferty)" />
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Typ</label>
+                                <InputSelect class="form-select" @bind-Value="edytowanaOferta.Typ">
+                                    <option value="Bilet">Bilet</option>
+                                    <option value="Karnet">Karnet</option>
+                                    <option value="Usługa">Usługa</option>
+                                </InputSelect>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Cena Podstawowa</label>
+                                <InputNumber class="form-control" @bind-Value="edytowanaOferta.CenaPodstawowa" />
+                            </div>
+                        </div>
+                        <!-- Można dodać resztę pól w ten sam sposób -->
+
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="ZamknijModalOferty">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Zapisz</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+
+@code {
+    private string aktywnaZakladka = "Cennik";
+
+    // --- Logika dla Cennika ---
+    private List<OfertaCennikowa>? oferty;
+    private bool czyModalOfertyOtwarty = false;
+    private OfertaCennikowa edytowanaOferta = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ZaladujDaneCennika();
+    }
+
+    private async Task ZaladujDaneCennika()
+    {
+        oferty = await OfertaService.PobierzWszystkieOfertyAsync();
+    }
+
+    private void OtworzModalOferty(OfertaCennikowa? oferta = null)
+    {
+        if (oferta == null)
+        {
+            edytowanaOferta = new OfertaCennikowa { Typ = "Bilet", ObowiazujeOd = DateTime.Now }; // Domyślne wartości
+        }
+        else
+        {
+            // Tworzymy kopię, aby nie modyfikować bezpośrednio listy
+            edytowanaOferta = new OfertaCennikowa
+                {
+                    Id = oferta.Id,
+                    NazwaOferty = oferta.NazwaOferty,
+                    Typ = oferta.Typ,
+                    Opis = oferta.Opis,
+                    CenaPodstawowa = oferta.CenaPodstawowa,
+                    // ... skopiuj resztę pól
+                };
+        }
+        czyModalOfertyOtwarty = true;
+    }
+
+    private void ZamknijModalOferty()
+    {
+        czyModalOfertyOtwarty = false;
+    }
+
+    private async Task ZapiszOferte()
+    {
+        if (edytowanaOferta.Id == 0)
+        {
+            await OfertaService.DodajOferteAsync(edytowanaOferta);
+        }
+        else
+        {
+            await OfertaService.ZaktualizujOferteAsync(edytowanaOferta);
+        }
+
+        ZamknijModalOferty();
+        await ZaladujDaneCennika();
+    }
+}

@@ -1,0 +1,155 @@
+﻿@page "/"
+
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@inject IAtrakcjaService AtrakcjaService
+@inject IOfertaCennikowaService OfertaService
+
+<PageTitle>Aquapark Słoneczna Fala - Strona Główna</PageTitle>
+
+<div class="home-page">
+    <!-- Hero Section -->
+    <section class="hero-section text-center text-white mb-5">
+        <div class="hero-overlay"></div>
+        <div class="container position-relative">
+            <h1 class="display-4 fw-bold mb-3">Witamy w Aquaparku Słoneczna Fala</h1>
+            <p class="lead mb-4">Największy kompleks wodny w regionie!</p>
+            <a href="atrakcje" class="btn btn-primary btn-lg px-4 me-2">Wszystkie atrakcje</a>
+            <a href="cennik" class="btn btn-outline-light btn-lg px-4">Pełny Cennik</a>
+        </div>
+    </section>
+
+    <!-- About Section - pozostaje statyczna -->
+    <section class="container mb-5">
+        <!-- ... (sekcja "O naszym aquaparku" bez zmian) ... -->
+    </section>
+
+    <!-- DYNAMIC Attractions Section -->
+    <section id="attractions" class="bg-light py-5 mb-5">
+        <div class="container">
+            <h2 class="text-center mb-5">Nasze najpopularniejsze atrakcje</h2>
+
+            @if (polecaneAtrakcje == null)
+            {
+                <div class="text-center"><em>Ładowanie atrakcji...</em></div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    @foreach (var atrakcja in polecaneAtrakcje)
+                    {
+                        <div class="col-md-4">
+                            <div class="card h-100 shadow-sm">
+                                <!-- Możesz dodać pole na URL obrazka w modelu Atrakcja -->
+                                <img src="https://placehold.co/600x400/007bff/white?text=@(Uri.EscapeDataString(atrakcja.Nazwa))" class="card-img-top" alt="@atrakcja.Nazwa">
+                                <div class="card-body">
+                                    <h5 class="card-title">@atrakcja.Nazwa</h5>
+                                    <p class="card-text">@atrakcja.Opis</p>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <!-- DYNAMIC Pricing Section -->
+    <section id="pricing" class="container mb-5">
+        <h2 class="text-center mb-5">Przykładowe Ceny</h2>
+        @if (przykladoweOferty == null)
+        {
+            <div class="text-center"><em>Ładowanie cennika...</em></div>
+        }
+        else
+        {
+            <div class="row justify-content-center">
+                @foreach (var oferta in przykladoweOferty)
+                {
+                    <div class="col-md-4 mb-4">
+                        <div class="card text-center h-100">
+                            <div class="card-header bg-primary text-white py-3">
+                                <h4 class="my-0">@oferta.Typ</h4>
+                            </div>
+                            <div class="card-body d-flex flex-column">
+                                <h5 class="card-title">@oferta.NazwaOferty</h5>
+                                <h2 class="card-title">@oferta.CenaPodstawowa.ToString("C")</h2>
+                                <p class="text-muted flex-grow-1">@oferta.Opis</p>
+                                <a href="cennik" class="btn btn-outline-primary mt-auto">Zobacz szczegóły</a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+    <section class="bg-primary text-white py-5">
+        <div class="container text-center">
+            <h2 class="mb-4">Masz pytania?</h2>
+            <p class="lead mb-4">Jesteśmy do Twojej dyspozycji 7 dni w tygodniu</p>
+            <a href="/contact" class="btn btn-light btn-lg">Kontakt</a>
+        </div>
+    </section>
+</div>
+
+<style>
+    .hero-section {
+        position: relative;
+        padding: 8rem 0;
+        background: url('https://images.unsplash.com/photo-1581093196277-1c8d47b5d727?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80') no-repeat center center;
+        background-size: cover;
+    }
+
+    .hero-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+
+    .hero-section .container {
+        position: relative;
+        z-index: 1;
+    }
+
+    .icon-list {
+        list-style: none;
+        padding-left: 0;
+    }
+
+        .icon-list li {
+            padding: 0.5rem 0;
+        }
+
+        .icon-list i {
+            margin-right: 0.5rem;
+        }
+
+    .card {
+        transition: transform 0.3s;
+    }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+</style>
+
+@code {
+    private List<Atrakcja>? polecaneAtrakcje;
+    private List<OfertaCennikowa>? przykladoweOferty;
+
+    // Ta metoda wykona się na serwerze podczas generowania strony (SSR)
+    protected override async Task OnInitializedAsync()
+    {
+        // Uruchamiamy pobieranie danych równolegle dla większej wydajności
+        var atrakcjeTask = AtrakcjaService.PobierzPolecaneAtrakcjeAsync();
+        var ofertyTask = OfertaService.PobierzWszystkieOfertyAsync();
+
+        await Task.WhenAll(atrakcjeTask, ofertyTask);
+
+        polecaneAtrakcje = await atrakcjeTask;
+        przykladoweOferty = await ofertyTask;
+    }
+}

@@ -1,0 +1,102 @@
+﻿@page "/klient-edycja/{KlientId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@inject IKlientService KlientService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Edycja Klienta</PageTitle>
+
+<h1 class="mb-4"><span class="bi bi-pencil-square me-2"></span>Edycja Klienta</h1>
+
+@if (klientDoEdycji == null)
+{
+    <div class="text-center mt-5">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Ładowanie...</span>
+        </div>
+        <p class="mt-2">Ładowanie formularza...</p>
+    </div>
+}
+else
+{
+    <div class="card shadow-sm">
+        <div class="card-header bg-warning">
+            <h4 class="mb-0">Edytujesz: @klientDoEdycji.Imię @klientDoEdycji.Nazwisko</h4>
+        </div>
+        <div class="card-body p-4">
+            <EditForm Model="@klientDoEdycji" OnValidSubmit="HandleUpdateSubmit">
+                <DataAnnotationsValidator />
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="imie" class="form-label">Imię:</label>
+                        <InputText id="imie" class="form-control" @bind-Value="klientDoEdycji.Imię" />
+                        <ValidationMessage For="@(() => klientDoEdycji.Imię)" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="nazwisko" class="form-label">Nazwisko:</label>
+                        <InputText id="nazwisko" class="form-control" @bind-Value="klientDoEdycji.Nazwisko" />
+                        <ValidationMessage For="@(() => klientDoEdycji.Nazwisko)" />
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="email" class="form-label">Email (opcjonalnie):</label>
+                        <InputText id="email" type="email" class="form-control" @bind-Value="klientDoEdycji.Email" />
+                        <ValidationMessage For="@(() => klientDoEdycji.Email)" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="telefon" class="form-label">Numer telefonu (opcjonalnie):</label>
+                        <InputText id="telefon" class="form-control" @bind-Value="klientDoEdycji.NrTelefonu" />
+                        <ValidationMessage For="@(() => klientDoEdycji.NrTelefonu)" />
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="d-flex justify-content-end">
+                    <button type="button" class="btn btn-secondary me-2" @onclick="Anuluj">
+                        <span class="bi bi-x-circle"></span> Anuluj
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <span class="bi bi-save"></span> Zapisz zmiany
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+
+@code {
+    [Parameter]
+    public int KlientId { get; set; }
+
+    private Klient? klientDoEdycji;
+
+    protected override async Task OnInitializedAsync()
+    {
+        klientDoEdycji = await KlientService.PobierzKlientaPoIdAsync(KlientId);
+    }
+
+    private async Task HandleUpdateSubmit()
+    {
+        if (klientDoEdycji != null)
+        {
+            await KlientService.ZaktualizujKlientaAsync(klientDoEdycji);
+
+            // --- POPRAWIONA NAWIGACJA (bez forceLoad) ---
+            NavigationManager.NavigateTo($"/klient-profil/{KlientId}?status=zaktualizowano");
+        }
+    }
+
+    private void Anuluj()
+    {
+        NavigationManager.NavigateTo($"/klient-profil/{KlientId}");
+    }
+}
