@@ -1,0 +1,526 @@
+@page "/symulator"
+@using AquaparkApp.Data
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.EntityFrameworkCore
+@using System.ComponentModel.DataAnnotations
+@inject ISymulatorService SymulatorService
+@inject ApplicationDbContext Context
+@inject ILogger<Simulator> Logger
+
+<PageTitle>Symulator Dnia Klienta</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="alert alert-info">
+                <h4>Symulator Dnia Klienta</h4>
+                <p>Symulator pozwala na testowanie różnych scenariuszy wizyty klienta w aquaparku.</p>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(komunikat))
+    {
+        <div class="row">
+            <div class="col-md-12">
+                <div class="alert @(czySukces ? "alert-success" : "alert-danger")">
+                    @komunikat
+                    @if (!czySukces && !string.IsNullOrEmpty(szczegolyBledu))
+                    {
+                        <hr />
+                        <pre class="mb-0">@szczegolyBledu</pre>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Rozpoczęcie Wizyty</h5>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="@rozpoczecieWizyty" OnValidSubmit="RozpocznijWizyte" FormName="rozpoczecieWizyty">
+                        <DataAnnotationsValidator />
+                        <div class="form-group">
+                            <label for="numerOpaski">Numer Opaski:</label>
+                            <div class="input-group">
+                                <InputText id="numerOpaski" class="form-control" @bind-Value="rozpoczecieWizyty.NumerOpaski" @oninput="HandleInput" />
+                                @if (czyPokazujListeOpasek && filtrowaneOpaski.Any())
+                                {
+                                    <div class="list-group position-absolute" style="z-index: 1000; width: 100%;">
+                                        @foreach (var opaska in filtrowaneOpaski)
+                                        {
+                                            <button type="button" class="list-group-item list-group-item-action" @onclick="() => WybierzOpaske(opaska)">
+                                                @opaska.NumerOpaski
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <ValidationMessage For="@(() => rozpoczecieWizyty.NumerOpaski)" />
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">Rozpocznij Wizytę</button>
+                    </EditForm>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Przejście przez Bramkę</h5>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="@przejscieBramki" OnValidSubmit="ZalogujPrzejscieBramki" FormName="przejscieBramki">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <div class="form-group">
+                            <label for="bramkaId">Bramka:</label>
+                            <InputSelect id="bramkaId" class="form-control" @bind-Value="przejscieBramki.BramkaId">
+                                <option value="">Wybierz bramkę...</option>
+                                @foreach (var bramka in bramki)
+                                {
+                                    <option value="@bramka.Id">@bramka.Nazwa</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="@(() => przejscieBramki.BramkaId)" />
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">Zaloguj Przejście</button>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Dodaj Karę</h5>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="@dodanieKary" OnValidSubmit="DodajKare" FormName="dodanieKary">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <div class="form-group">
+                            <label for="typKaryId">Typ Kary:</label>
+                            <InputSelect id="typKaryId" class="form-control" @bind-Value="dodanieKary.TypKaryId">
+                                <option value="">Wybierz typ kary...</option>
+                                @foreach (var typKary in typyKar)
+                                {
+                                    <option value="@typKary.Id">@typKary.Nazwa</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="@(() => dodanieKary.TypKaryId)" />
+                        </div>
+                        <div class="form-group">
+                            <label for="kwota">Kwota:</label>
+                            <InputNumber id="kwota" class="form-control" @bind-Value="dodanieKary.Kwota" />
+                            <ValidationMessage For="@(() => dodanieKary.Kwota)" />
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-3">Dodaj Karę</button>
+                    </EditForm>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Zakończenie Wizyty</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-danger mt-3" @onclick="ZakonczWizyte">Zakończ Wizytę</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Status Wizyty</h5>
+                </div>
+                <div class="card-body">
+                    @if (aktywnaWizyta != null)
+                    {
+                        <div class="alert alert-success">
+                            <h6>Aktywna Wizyta</h6>
+                            <p>Numer Opaski: @aktywnaWizyta.Opaska.NumerOpaski</p>
+                            <p>Klient: @aktywnaWizyta.Klient.Imię @aktywnaWizyta.Klient.Nazwisko</p>
+                            <p>Status: @aktywnaWizyta.StatusWizyty.Nazwa</p>
+                            <p>Czas Wejścia: @aktywnaWizyta.CzasWejscia.ToString("dd.MM.yyyy HH:mm:ss")</p>
+                            @if (aktywnaWizyta.CzasWyjscia.HasValue)
+                            {
+                                <p>Czas Wyjścia: @aktywnaWizyta.CzasWyjscia.Value.ToString("dd.MM.yyyy HH:mm:ss")</p>
+                            }
+                            <p>Suma Kar: @sumaKar.ToString("C")</p>
+                        </div>
+                        <div class="mt-3">
+                            <p>Czas pozostały: <span class="@(czyCzasWygasl ? "text-danger" : "")">@FormatujCzasPozostaly()</span></p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-warning">
+                            <p>Brak aktywnej wizyty</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Bramka> bramki = new();
+    private List<TypKary> typyKar = new();
+    private List<Opaska> opaski = new();
+    private List<Opaska> filtrowaneOpaski = new();
+    private Wizyta? aktywnaWizyta;
+    private decimal sumaKar;
+    private bool czyCzasWygasl;
+    private System.Timers.Timer timer = new(1000);
+    private string? komunikat;
+    private bool czySukces;
+    private bool czyPokazujListeOpasek;
+    private string? szczegolyBledu;
+
+    private class RozpoczecieWizyty
+    {
+        [Required(ErrorMessage = "Numer opaski jest wymagany")]
+        [StringLength(50, ErrorMessage = "Numer opaski nie może być dłuższy niż 50 znaków")]
+        public string NumerOpaski { get; set; } = "";
+    }
+
+    private class PrzejscieBramki
+    {
+        [Required(ErrorMessage = "Wybierz bramkę")]
+        public int BramkaId { get; set; }
+    }
+
+    private class DodanieKary
+    {
+        [Required(ErrorMessage = "Wybierz typ kary")]
+        public int TypKaryId { get; set; }
+
+        [Required(ErrorMessage = "Podaj kwotę kary")]
+        [Range(0.01, double.MaxValue, ErrorMessage = "Kwota musi być większa od zera")]
+        public decimal Kwota { get; set; }
+    }
+
+    private RozpoczecieWizyty rozpoczecieWizyty = new();
+    private PrzejscieBramki przejscieBramki = new();
+    private DodanieKary dodanieKary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Logger.LogInformation("Inicjalizacja komponentu Simulator...");
+            
+            Logger.LogInformation("Pobieranie bramek...");
+            bramki = await Context.Bramki.ToListAsync();
+            
+            Logger.LogInformation("Pobieranie typów kar...");
+            typyKar = await Context.TypyKar.ToListAsync();
+            
+            Logger.LogInformation("Pobieranie opasek...");
+            opaski = await Context.Opaski
+                .Where(o => o.Status == "Dostepna")
+                .ToListAsync();
+
+            // Sprawdź i dodaj wszystkie wymagane statusy
+            var wymaganeStatusy = new[]
+            {
+                new { Nazwa = "Aktywna", Opis = "Wizyta jest aktywna" },
+                new { Nazwa = "Zakończona", Opis = "Wizyta została zakończona" },
+                new { Nazwa = "Anulowana", Opis = "Wizyta została anulowana" }
+            };
+
+            foreach (var status in wymaganeStatusy)
+            {
+                var istnieje = await Context.StatusyWizyt
+                    .AnyAsync(s => s.Nazwa == status.Nazwa);
+
+                if (!istnieje)
+                {
+                    Logger.LogInformation("Dodawanie statusu '{Nazwa}'...", status.Nazwa);
+                    Context.StatusyWizyt.Add(new StatusWizyty
+                    {
+                        Nazwa = status.Nazwa,
+                        Opis = status.Opis
+                    });
+                }
+            }
+
+            await Context.SaveChangesAsync();
+            Logger.LogInformation("Statusy zostały zaktualizowane");
+            
+            Logger.LogInformation("Pobieranie statusu wizyty...");
+            await PobierzStatusWizyty();
+
+            timer.Elapsed += async (sender, e) => await InvokeAsync(StateHasChanged);
+            timer.Start();
+            
+            Logger.LogInformation("Inicjalizacja komponentu zakończona pomyślnie");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas inicjalizacji komponentu");
+            komunikat = "Wystąpił błąd podczas inicjalizacji komponentu";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task HandleInput(ChangeEventArgs e)
+    {
+        rozpoczecieWizyty.NumerOpaski = e.Value?.ToString() ?? "";
+        await FiltrujOpaski();
+    }
+
+    private async Task FiltrujOpaski()
+    {
+        try
+        {
+            var wartosc = rozpoczecieWizyty.NumerOpaski;
+            Logger.LogInformation("Wprowadzono numer opaski: {NumerOpaski}", wartosc);
+            
+            if (string.IsNullOrWhiteSpace(wartosc))
+            {
+                filtrowaneOpaski.Clear();
+                czyPokazujListeOpasek = false;
+                return;
+            }
+
+            filtrowaneOpaski = opaski
+                .Where(o => o.NumerOpaski.Contains(wartosc, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            
+            czyPokazujListeOpasek = filtrowaneOpaski.Any();
+            Logger.LogInformation("Znaleziono {LiczbaOpasek} pasujących opasek", filtrowaneOpaski.Count);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas filtrowania opasek");
+            komunikat = "Wystąpił błąd podczas filtrowania opasek";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private void WybierzOpaske(Opaska opaska)
+    {
+        try
+        {
+            rozpoczecieWizyty.NumerOpaski = opaska.NumerOpaski;
+            Logger.LogInformation("Wybrano opaskę: {NumerOpaski}", opaska.NumerOpaski);
+            filtrowaneOpaski.Clear();
+            czyPokazujListeOpasek = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas wybierania opaski");
+            komunikat = "Wystąpił błąd podczas wybierania opaski";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task PobierzStatusWizyty()
+    {
+        try
+        {
+            Logger.LogInformation("Pobieranie statusu wizyty...");
+            
+            var statusAktywny = await Context.StatusyWizyt
+                .FirstOrDefaultAsync(s => s.Nazwa == "Aktywna");
+
+            if (statusAktywny == null)
+            {
+                Logger.LogWarning("Nie znaleziono statusu 'Aktywna'");
+                komunikat = "Nie znaleziono statusu 'Aktywna' w bazie danych";
+                czySukces = false;
+                return;
+            }
+
+            Logger.LogInformation("Znaleziono status 'Aktywna' o ID: {StatusId}", statusAktywny.Id);
+
+            aktywnaWizyta = await Context.Wizyty
+                .Include(w => w.Opaska)
+                .Include(w => w.Klient)
+                .Include(w => w.StatusWizyty)
+                .Where(w => w.StatusWizytyId == statusAktywny.Id)
+                .OrderByDescending(w => w.CzasWejscia)
+                .FirstOrDefaultAsync();
+
+            Logger.LogInformation("Znaleziono wizytę: {WizytaId}", aktywnaWizyta?.Id);
+
+            if (aktywnaWizyta != null)
+            {
+                sumaKar = await SymulatorService.PobierzSumaKar(aktywnaWizyta.Id);
+                Logger.LogInformation("Suma kar: {SumaKar}", sumaKar);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas pobierania statusu wizyty");
+            komunikat = "Wystąpił błąd podczas pobierania statusu wizyty";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task RozpocznijWizyte()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(rozpoczecieWizyty.NumerOpaski))
+            {
+                komunikat = "Numer opaski jest wymagany";
+                czySukces = false;
+                return;
+            }
+
+            var (success, message, wizyta) = await SymulatorService.RozpocznijWizyte(rozpoczecieWizyty.NumerOpaski);
+            
+            if (success)
+            {
+                aktywnaWizyta = wizyta;
+                komunikat = "Wizyta rozpoczęta pomyślnie";
+                czySukces = true;
+                rozpoczecieWizyty = new RozpoczecieWizyty();
+                await PobierzStatusWizyty();
+            }
+            else
+            {
+                komunikat = message;
+                czySukces = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas rozpoczynania wizyty");
+            komunikat = "Wystąpił błąd podczas rozpoczynania wizyty";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task ZalogujPrzejscieBramki()
+    {
+        try
+        {
+            if (aktywnaWizyta != null)
+            {
+                Logger.LogInformation("Próba zalogowania przejścia przez bramkę {BramkaId} dla wizyty {WizytaId}", 
+                    przejscieBramki.BramkaId, aktywnaWizyta.Id);
+
+                var (success, message) = await SymulatorService.ZalogujPrzejscieBramki(aktywnaWizyta.Id, przejscieBramki.BramkaId);
+                
+                komunikat = message;
+                czySukces = success;
+
+                if (success)
+                {
+                    przejscieBramki = new PrzejscieBramki();
+                    await PobierzStatusWizyty();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas logowania przejścia przez bramkę");
+            komunikat = "Wystąpił błąd podczas logowania przejścia przez bramkę";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task DodajKare()
+    {
+        try
+        {
+            if (aktywnaWizyta != null)
+            {
+                Logger.LogInformation("Próba dodania kary {TypKaryId} o wartości {Kwota} dla wizyty {WizytaId}", 
+                    dodanieKary.TypKaryId, dodanieKary.Kwota, aktywnaWizyta.Id);
+
+                var (success, message) = await SymulatorService.DodajKare(aktywnaWizyta.Id, dodanieKary.TypKaryId, dodanieKary.Kwota);
+                
+                komunikat = message;
+                czySukces = success;
+
+                if (success)
+                {
+                    dodanieKary = new DodanieKary();
+                    await PobierzStatusWizyty();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas dodawania kary");
+            komunikat = "Wystąpił błąd podczas dodawania kary";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private async Task ZakonczWizyte()
+    {
+        try
+        {
+            if (aktywnaWizyta != null)
+            {
+                Logger.LogInformation("Próba zakończenia wizyty {WizytaId}", aktywnaWizyta.Id);
+
+                var (success, message) = await SymulatorService.ZakonczWizyte(aktywnaWizyta.Id);
+                
+                komunikat = message;
+                czySukces = success;
+
+                if (success)
+                {
+                    await PobierzStatusWizyty();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Błąd podczas kończenia wizyty");
+            komunikat = "Wystąpił błąd podczas kończenia wizyty";
+            szczegolyBledu = ex.ToString();
+            czySukces = false;
+        }
+    }
+
+    private string FormatujCzasPozostaly()
+    {
+        if (aktywnaWizyta == null) return "--:--";
+
+        var czasPozostaly = ObliczCzasPozostaly();
+        czyCzasWygasl = czasPozostaly <= 0;
+
+        if (czyCzasWygasl) return "00:00";
+
+        var godziny = Math.Floor(czasPozostaly / 60);
+        var minuty = czasPozostaly % 60;
+        return $"{godziny:D2}:{minuty:D2}";
+    }
+
+    private double ObliczCzasPozostaly()
+    {
+        if (aktywnaWizyta == null) return 0;
+
+        var czasTrwania = 120; // 2 godziny w minutach
+        var uplynietyCzas = (DateTime.Now - aktywnaWizyta.CzasWejscia).TotalMinutes;
+        return Math.Max(0, czasTrwania - uplynietyCzas);
+    }
+
+    public void Dispose()
+    {
+        timer.Dispose();
+    }
+} 

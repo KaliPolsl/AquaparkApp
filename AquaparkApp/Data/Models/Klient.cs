@@ -36,4 +36,7 @@ public partial class Klient
 
     [InverseProperty("Klient")]
     public virtual ICollection<Wizyta> Wizyty { get; set; } = new List<Wizyta>();
+
+    [InverseProperty("Klient")]
+    public virtual ICollection<Opaska> Opaski { get; set; } = new List<Opaska>();
 }

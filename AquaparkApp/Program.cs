@@ -12,6 +12,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// Add Razor Pages support
+builder.Services.AddRazorPages();
+
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityUserAccessor>();
 builder.Services.AddScoped<IdentityRedirectManager>();
@@ -47,6 +50,7 @@ builder.Services.AddScoped<IZnizkaService, ZnizkaService>();
 builder.Services.AddScoped<ITransakcjaService, TransakcjaService>();
 builder.Services.AddScoped<IOpaskaService, OpaskaService>();
 builder.Services.AddScoped<IWizytaService, WizytaService>();
+builder.Services.AddScoped<ISymulatorService, SymulatorService>();
 
 var app = builder.Build();
 
@@ -66,6 +70,9 @@ app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 app.UseAntiforgery();
+
+// Add Razor Pages routing
+app.MapRazorPages();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

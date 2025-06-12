@@ -29,6 +29,13 @@ public partial class Opaska
     [Column("dataWycofania", TypeName = "datetime")]
     public DateTime? DataWycofania { get; set; }
 
+    [Column("klientId")]
+    public int? KlientId { get; set; }
+
+    [ForeignKey("KlientId")]
+    [InverseProperty("Opaski")]
+    public virtual Klient? Klient { get; set; }
+
     [InverseProperty("Opaska")]
     public virtual ICollection<Wizyta> Wizyty { get; set; } = new List<Wizyta>();
 }
