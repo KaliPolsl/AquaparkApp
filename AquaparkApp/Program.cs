@@ -32,6 +32,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
+    .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
@@ -47,8 +48,24 @@ builder.Services.AddScoped<IZnizkaService, ZnizkaService>();
 builder.Services.AddScoped<ITransakcjaService, TransakcjaService>();
 builder.Services.AddScoped<IOpaskaService, OpaskaService>();
 builder.Services.AddScoped<IWizytaService, WizytaService>();
+builder.Services.AddScoped<IKoszykService, KoszykService>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        // Uruchomienie naszego inicjalizatora
+        await UserRoleInitializer.InitializeAsync(services);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred while seeding the database.");
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

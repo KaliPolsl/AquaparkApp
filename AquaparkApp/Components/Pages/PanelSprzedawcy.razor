@@ -1,5 +1,5 @@
 ﻿@page "/panel-sprzedawcy"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin, Pracownik")]
 @rendermode InteractiveServer
 @implements IDisposable
 

@@ -1,5 +1,5 @@
 ﻿@page "/zarzadzaj-klientami"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin, Pracownik")]
 @rendermode InteractiveServer
 @implements IDisposable // Potrzebne do prawidłowego zwolnienia Timera
 

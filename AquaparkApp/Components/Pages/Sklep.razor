@@ -1,0 +1,121 @@
+﻿@page "/sklep"
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+
+@inject IOfertaCennikowaService OfertaService
+@inject IKoszykService KoszykService
+@inject ITransakcjaService TransakcjaService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Kup Bilet</PageTitle>
+
+<div class="container mt-4">
+    <div class="row g-5">
+        <!-- Kolumna z ofertami -->
+        <div class="col-md-8">
+            <h1 class="mb-4">Wybierz Bilet lub Karnet</h1>
+            @if (oferty == null)
+            {
+                <p>Ładowanie oferty...</p>
+            }
+            else
+            {
+                <div class="row row-cols-1 row-cols-lg-2 g-4">
+                    @foreach (var oferta in oferty)
+                    {
+                        <div class="col">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title">@oferta.NazwaOferty</h5>
+                                    <h6 class="card-subtitle mb-2 text-muted">@oferta.Typ</h6>
+                                    <p class="card-text">@oferta.Opis</p>
+                                </div>
+                                <div class="card-footer d-flex justify-content-between align-items-center">
+                                    <span class="fs-5 fw-bold text-primary">@oferta.CenaPodstawowa.ToString("C")</span>
+                                    <button class="btn btn-success" @onclick="() => KoszykService.DodajDoKoszyka(oferta)">
+                                        <span class="bi bi-cart-plus"></span> Dodaj do koszyka
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Kolumna z koszykiem -->
+        <div class="col-md-4">
+            <div class="card shadow-sm position-sticky" style="top: 2rem;">
+                <div class="card-header">
+                    <h4 class="mb-0"><span class="bi bi-cart-fill me-2"></span>Twój Koszyk</h4>
+                </div>
+                <div class="card-body">
+                    @if (!KoszykService.Pozycje.Any())
+                    {
+                        <p class="text-muted">Koszyk jest pusty.</p>
+                    }
+                    else
+                    {
+                        <ul class="list-group mb-3">
+                            @foreach (var item in KoszykService.Pozycje)
+                            {
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>@item.NazwaOferty</span>
+                                    <strong>@item.CenaPodstawowa.ToString("C")</strong>
+                                </li>
+                            }
+                            <li class="list-group-item d-flex justify-content-between bg-light">
+                                <span class="fw-bold">Suma</span>
+                                <strong class="text-primary">@KoszykService.Suma.ToString("C")</strong>
+                            </li>
+                        </ul>
+                        <div class="d-grid">
+                            <button class="btn btn-primary btn-lg" @onclick="PrzejdzDoKasy">Przejdź do kasy</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<OfertaCennikowa>? oferty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Subskrybuj zdarzenie zmiany w koszyku
+        KoszykService.OnChange += StateHasChanged;
+        oferty = await OfertaService.PobierzWszystkieOfertyAsync();
+    }
+
+    private async Task PrzejdzDoKasy()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            try
+            {
+                await TransakcjaService.ZrealizujZakupKlientaAsync(user.Identity.Name!, KoszykService.Pozycje, "Online");
+                KoszykService.WyczyscKoszyk();
+                // Przekieruj na stronę z podziękowaniem lub historią zakupów
+            }
+            catch (Exception ex)
+            {
+                // Wyświetl błąd
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        // Zawsze odsubskrybuj zdarzenia, aby uniknąć wycieków pamięci
+        KoszykService.OnChange -= StateHasChanged;
+    }
+}

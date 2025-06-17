@@ -1,5 +1,5 @@
 ﻿@page "/klient-edycja/{KlientId:int}"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin, Pracownik")]
 @rendermode InteractiveServer
 
 @using AquaparkApp.Data.Models

@@ -6,6 +6,11 @@
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.WebUtilities
 @using AquaparkApp.Data
+@* === NASZE MODYFIKACJE === *@
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@inject IKlientService KlientService
+
 
 @inject UserManager<ApplicationUser> UserManager
 @inject IUserStore<ApplicationUser> UserStore
@@ -81,6 +86,27 @@
         }
 
         Logger.LogInformation("User created a new account with password.");
+
+        // === NASZA MODYFIKACJA: TWORZENIE PROFILU KLIENTA ===
+        try
+        {
+            var nowyProfilKlienta = new Klient
+                {
+                    Email = Input.Email,
+                    // Imię i Nazwisko pozostają puste, klient może je uzupełnić później
+                };
+            await KlientService.DodajKlientaAsync(nowyProfilKlienta);
+            Logger.LogInformation($"Successfully created a 'Klient' profile for user {user.Email}.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, $"Failed to create a 'Klient' profile for user {user.Email}. Consider manual cleanup.");
+            // W środowisku produkcyjnym można by tutaj dodać logikę cofającą, np.
+            // await UserManager.DeleteAsync(user);
+            // i zwrócić błąd użytkownikowi.
+        }
+        // === KONIEC NASZEJ MODYFIKACJI ===
+
 
         var userId = await UserManager.GetUserIdAsync(user);
         var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);

@@ -7,6 +7,57 @@ namespace AquaparkApp.Services;
 
 public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory) : ITransakcjaService
 {
+    public async Task<int> ZrealizujZakupKlientaAsync(string userId, List<OfertaCennikowa> pozycjeKoszyka, string metodaPlatnosci)
+    {
+        await using var dbContext = await dbFactory.CreateDbContextAsync();
+
+        // Znajdź naszego Klienta na podstawie ID użytkownika Identity
+        var klient = await dbContext.Klienci.FirstOrDefaultAsync(k => k.Email == userId); // Zakładamy, że email to username
+        if (klient == null) throw new Exception("Nie znaleziono profilu klienta dla zalogowanego użytkownika.");
+
+        // Używamy transakcji, aby zapewnić spójność danych
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        try
+        {
+            var produktyDoZapisu = pozycjeKoszyka.Select(oferta => new ProduktZakupiony
+            {
+                KlientId = klient.Id,
+                OfertaId = oferta.Id,
+                CenaZakupu = oferta.CenaPodstawowa,
+                DataZakupu = DateTime.Now,
+                Status = "Nowy",
+                // ... pozostałe pola ...
+            }).ToList();
+
+            await dbContext.ProduktyZakupione.AddRangeAsync(produktyDoZapisu);
+            await dbContext.SaveChangesAsync();
+
+            var platnosc = new Platnosc
+            {
+                KlientId = klient.Id,
+                KwotaCalkowita = pozycjeKoszyka.Sum(p => p.CenaPodstawowa),
+                DataPlatnosci = DateTime.Now,
+                MetodaPlatnosci = metodaPlatnosci,
+                StatusPlatnosci = "Oczekuje" // Np. oczekuje na płatność online
+            };
+
+            await dbContext.Platnosci.AddAsync(platnosc);
+            await dbContext.SaveChangesAsync();
+
+            // ... (logika tworzenia PozycjiPłatności) ...
+
+            await transaction.CommitAsync();
+            return platnosc.Id;
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+
+
     public async Task<int> ZrealizujTransakcjeAsync(int klientId, List<PozycjaKoszykaDto> pozycjeKoszyka, string metodaPlatnosci, int? znizkaId)
     {
         await using var dbContext = await dbFactory.CreateDbContextAsync();

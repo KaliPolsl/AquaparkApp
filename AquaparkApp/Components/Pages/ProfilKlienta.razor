@@ -1,5 +1,5 @@
 ﻿@page "/klient-profil/{KlientId:int}"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin, Pracownik")]
 @rendermode InteractiveServer
 @implements IDisposable
 
