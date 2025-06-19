@@ -9,10 +9,8 @@ namespace AquaparkApp.Services;
 public class KlientService(IDbContextFactory<ApplicationDbContext> dbContextFactory) : IKlientService
 {
     // Nie mamy już pola dbContext. Mamy pole z fabryką.
-
     public async Task<List<Klient>> WyszukajKlientowAsync(string searchTerm)
     {
-        // 1. Tworzymy nową, świeżą instancję DbContext TYLKO na potrzeby tej operacji
         await using var dbContext = await dbContextFactory.CreateDbContextAsync();
 
         if (string.IsNullOrWhiteSpace(searchTerm))
@@ -22,19 +20,27 @@ public class KlientService(IDbContextFactory<ApplicationDbContext> dbContextFact
 
         var lowerTerm = searchTerm.ToLower();
 
-        // 2. Używamy jej do wykonania zapytania
+        // Sprawdzamy, czy wpisany tekst jest liczbą, aby móc szukać po ID
+        bool jestLiczba = int.TryParse(searchTerm, out int id);
+
         return await dbContext.Klienci
             .Where(k =>
+                // Wyszukiwanie po imieniu (bez uwzględniania wielkości liter)
                 (k.Imię != null && k.Imię.ToLower().Contains(lowerTerm)) ||
+
+                // Wyszukiwanie po nazwisku (bez uwzględniania wielkości liter)
                 (k.Nazwisko != null && k.Nazwisko.ToLower().Contains(lowerTerm)) ||
-                (k.NrTelefonu != null && k.NrTelefonu.Contains(searchTerm)) ||
+
+                // === NOWA CZĘŚĆ: Wyszukiwanie po emailu ===
                 (k.Email != null && k.Email.ToLower().Contains(lowerTerm)) ||
-                k.Id.ToString() == searchTerm
+
+                // === NOWA CZĘŚĆ: Wyszukiwanie po ID ===
+                // Ten warunek jest spełniony tylko, jeśli 'searchTerm' dało się przekonwertować na liczbę 'id'
+                (jestLiczba && k.Id == id)
             )
-            .AsNoTracking() // Dobra praktyka przy operacjach tylko do odczytu
-            .Take(20)
+            .AsNoTracking()
+            .Take(20) // Dobra praktyka: ograniczamy liczbę wyników
             .ToListAsync();
-        // 3. Po wyjściu z metody, 'using' automatycznie zwolni zasoby DbContext.
     }
 
     public async Task<Klient?> PobierzKlientaZHistoriaAsync(int klientId)
