@@ -38,7 +38,7 @@ public class OfertaCennikowaService(IDbContextFactory<ApplicationDbContext> dbFa
         var oferta = await context.OfertyCennikowe.FindAsync(id);
         if (oferta != null)
         {
-            oferta.ObowiazujeDo = czyAktywna ? null : DateTime.Now.AddDays(-1);
+            oferta.ObowiazujeDo = czyAktywna ? null : DateTime.UtcNow.AddDays(-1);
             await context.SaveChangesAsync();
         }
     }

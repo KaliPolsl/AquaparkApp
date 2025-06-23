@@ -1,0 +1,592 @@
+﻿@page "/symulator-klienta"
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin, Pracownik")]
+@rendermode InteractiveServer
+@implements IDisposable
+
+@inject IWizytaService WizytaService
+@inject IKaraService KaraService
+@inject IBramkaService BramkaService
+@inject IKlientService KlientService
+@inject ITransakcjaService TransakcjaService
+@inject NavigationManager NavigationManager
+
+@* Można też wstrzyknąć IAtrakcjaService, aby dynamicznie generować przyciski bramek *@
+
+<PageTitle>Symulator Dnia Klienta</PageTitle>
+
+<div class="container mt-4">
+    <h1 class="mb-4">Symulator Dnia Klienta</h1>
+
+    <!-- PANEL INICJACJI WIZYTY -->
+    @if (aktywnaWizyta == null)
+    {
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5>1. Identyfikacja i Rozpoczęcie Wizyty</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">ID Klienta</label>
+                        <input @bind="idKlientaInput" class="form-control" placeholder="Wpisz ID klienta..." />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Numer Opaski</label>
+                        <input @bind="numerOpaskiInput" class="form-control" placeholder="Wpisz numer opaski..." />
+                    </div>
+                </div>
+                <div class="d-grid mt-3">
+                    <button class="btn btn-success" @onclick="HandleWyszukajBilety" disabled="@(string.IsNullOrWhiteSpace(idKlientaInput) || string.IsNullOrWhiteSpace(numerOpaskiInput))">
+                        Wyszukaj dostępne bilety i karnety
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- PANEL AKTYWNEJ WIZYTY -->
+    @if (aktywnaWizyta != null)
+    {
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Status Aktywnej Wizyty</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>ID Wizyty:</strong> @aktywnaWizyta.Id</p>
+                        <p><strong>Opaska:</strong> @aktywnaWizyta.Opaska?.NumerOpaski</p>
+                        <p><strong>Klient:</strong> @aktywnaWizyta.Klient?.Imię @aktywnaWizyta.Klient?.Nazwisko</p>
+                        <p><strong>Czas Wejścia:</strong> @aktywnaWizyta.CzasWejscia.ToString("g")</p>
+                        <hr>
+                        <p class="fs-4"><strong>Czas Pozostały:</strong> <span class="fw-bold @(czyCzasPrzekroczony ? "text-danger" : "")">@czasPozostalyDisplay</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Bramki Dostępowe</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Przyciski wyboru bramki -->
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            @foreach (var bramka in dostepneBramkiZAtrakcjami)
+                            {
+                                <button class="btn @(wybranaBramka?.Id == bramka.Id ? "btn-primary" : "btn-outline-primary")" @onclick="() => wybranaBramka = bramka">
+                                    @bramka.Nazwa
+                                </button>
+                            }
+                        </div>
+                        
+
+                        <!-- Lista atrakcji dla wybranej bramki -->
+                        @if (wybranaBramka != null)
+                        {
+                            <hr>
+                            <h6>Atrakcje za bramką: <strong>@wybranaBramka.Nazwa</strong></h6>
+                            @if (wybranaBramka.Atrakcje.Any())
+                            {
+                                <div class="d-grid gap-2 mt-2">
+                                    @foreach (var atrakcja in wybranaBramka.Atrakcje)
+                                    {
+                                        // Nie potrzebujemy już zmiennej lokalnej, bo błąd był gdzie indziej
+                                        <button class="btn btn-outline-info text-start" @onclick='() => HandleSkorzystajZAtrakcji(wybranaBramka.Id, atrakcja)'>
+                                            <span class="bi bi-play-fill"></span> Skorzystaj: @atrakcja.Nazwa
+                                            @if (atrakcja.WymagaDodatkowejOplaty)
+                                            {
+                                                <span class="badge bg-danger float-end mt-1">@atrakcja.CenaDodatkowa?.ToString("C")</span>
+                                            }
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="text-muted"><em>Brak zdefiniowanych atrakcji dla tej bramki.</em></p>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header">
+                        <h5 class="mb-0">Zdarzenia i Kary</h5>
+                    </div>
+                    <div class="card-body d-grid gap-2">
+                        <button class="btn btn-outline-warning" @onclick='() => HandleNaliczKare(1, 5.00m, "Przekroczenie czasu o 10 min")'>Symuluj +10 min kary</button>
+                        <button class="btn btn-outline-danger" @onclick='() => HandleNaliczKare(19, 50.00m, "Kara za zniszczenie")'>Symuluj karę za zniszczenie</button>
+                        <button class="btn btn-outline-danger" @onclick='() => HandleNaliczKare(19, 100.00m, "Zniszczenie leżaka")'>Symuluj zniszczenie mienia</button>
+                        <button class="btn btn-outline-secondary" @onclick='() => HandleNaliczKare(14, 20.00m, "Bieganie po terenie basenu")'>Symuluj mandat za bieganie</button>
+                    </div>
+
+                    <!-- === NOWA SEKCJA DO WKLEJENIA === -->
+                    <hr class="mx-3 my-0">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">Podsumowanie Opłat</h6>
+                        @if (aktywnaWizyta != null && aktywnaWizyta.Kary.Any())
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var kara in aktywnaWizyta.Kary)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        @kara.Opis
+                                        <span class="badge bg-danger rounded-pill">@kara.Kwota.ToString("C")</span>
+                                    </li>
+                                }
+                            </ul>
+                            <div class="d-flex justify-content-between fw-bold mt-2">
+                                <span>Suma do zapłaty:</span>
+                                <span class="text-danger fs-5">@aktywnaWizyta.Kary.Sum(k => k.Kwota).ToString("C")</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-success mb-0">Brak dodatkowych opłat.</p>
+                        }
+                    </div>
+                    <!-- === KONIEC NOWEJ SEKCJI === -->
+
+
+                    <div class="card-footer d-grid">
+                        <button class="btn btn-danger" @onclick="HandleZakonczWizyte">Zakończ Wizytę</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Panel z logami i komunikatami -->
+    <div class="mt-4">
+        @if (!string.IsNullOrWhiteSpace(komunikat))
+        {
+            <div class="alert @(czyBlad ? "alert-danger" : "alert-success")">@komunikat</div>
+        }
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <!-- PANEL INICJACJI NOWEJ WIZYTY -->
+            @if (aktywnaWizyta == null)
+            {
+                <div class="card shadow-sm">
+                    <div class="card-header"><h5>1a. Rozpocznij NOWĄ Wizytę</h5></div>
+                    <div class="card-body">
+                        <!-- Pola na ID Klienta i Numer Opaski -->
+                        <button @onclick="HandleWyszukajBilety">Wyszukaj dostępne bilety</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="col-md-6">
+            <!-- NOWY PANEL WYSZUKIWANIA AKTYWNEJ WIZYTY -->
+            @if (aktywnaWizyta == null)
+            {
+                <div class="card shadow-sm">
+                    <div class="card-header"><h5>1b. Znajdź AKTYWNĄ Wizytę</h5></div>
+                    <div class="card-body">
+                        <div class="input-group">
+                            <input @bind="numerOpaskiDoWyszukania" class="form-control" placeholder="Wpisz numer opaski..." />
+                            <button class="btn btn-info" @onclick="HandleZnajdzAktywnaWizyte">Znajdź</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+
+
+    <div class="mt-4">
+        @if (aktywnaWizyta != null)
+        {
+            <h5><span class="bi bi-list-ol"></span> Log Zdarzeń Wizyty</h5>
+            <div class="list-group" style="max-height: 200px; overflow-y: auto;">
+                @foreach (var log in logiWizyty.AsEnumerable().Reverse())
+                {
+                    <span class="list-group-item list-group-item-light">@((MarkupString)log)</span>
+                }
+            </div>
+        }
+    </div>
+
+    @if (karyDoZaplaty != null && karyDoZaplaty.Any())
+    {
+        <div class="card mt-4 shadow-lg border-warning">
+            <div class="card-header bg-warning">
+                <h4 class="mb-0">Rozlicz Płatność za Kary</h4>
+            </div>
+            <div class="card-body">
+                <p>Należy uregulować <strong>@sumaKar.ToString("C")</strong>.</p>
+                <div class="mb-3">
+                    <label class="form-label">Wybierz metodę płatności:</label>
+                    <div class="btn-group w-100">
+                        <button class="btn @(wybranaMetodaPlatnosci == "Karta" ? "btn-success" : "btn-outline-secondary")" @onclick='() => wybranaMetodaPlatnosci = "Karta"'>Karta</button>
+                        <button class="btn @(wybranaMetodaPlatnosci == "Gotówka" ? "btn-success" : "btn-outline-secondary")" @onclick='() => wybranaMetodaPlatnosci = "Gotówka"'>Gotówka</button>
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button class="btn btn-primary" @onclick="HandleZaplacZaKary" disabled="@(wybranaMetodaPlatnosci == null || czyPrzetwarzaPlatnosc)">
+                        @if (czyPrzetwarzaPlatnosc)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                        }
+                        Zatwierdź Płatność
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@if (pokazModalWyboruProduktu)
+{
+    <div class="modal fade show" style="display:block" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Wybierz Bilet/Karnet do Aktywacji</h5>
+                    <button type="button" class="btn-close" @onclick="() => pokazModalWyboruProduktu = false"></button>
+                </div>
+                <div class="modal-body">
+                    @if (dostepneProdukty == null)
+                    {
+                        <p>Wyszukiwanie...</p>
+                    }
+                    else if (!dostepneProdukty.Any())
+                    {
+                        <div class="alert alert-warning">Ten klient nie ma żadnych dostępnych, niewykorzystanych biletów.</div>
+                    }
+                    else
+                    {
+                        <div class="list-group">
+                            @foreach (var produkt in dostepneProdukty)
+                            {
+                                <button type="button" class="list-group-item list-group-item-action" @onclick="() => HandleRozpocznijWizyte(produkt.Id)">
+                                    <strong>@produkt.Oferta.NazwaOferty</strong> (@produkt.Oferta.Typ)
+                                    <br>
+                                    <small>Zakupiono: @produkt.DataZakupu.ToShortDateString()</small>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private string? numerOpaskiDoWyszukania;
+
+
+
+    private List<Kara>? karyDoZaplaty;
+    private decimal sumaKar = 0;
+    private string? wybranaMetodaPlatnosci;
+    private bool czyPrzetwarzaPlatnosc;
+
+    private List<Bramka> dostepneBramkiZAtrakcjami = new();
+    private Bramka? wybranaBramka; // Przechowuje aktualnie wybraną bramkę
+
+    private List<Bramka> dostepneBramki = new();
+    private List<string> logiWizyty = new(); // Nowa lista do wyświetlania logów
+
+    private string? idKlientaInput;
+    private string? numerOpaskiInput;
+    private Wizyta? aktywnaWizyta;
+    private List<ProduktZakupiony>? dostepneProdukty;
+    private bool pokazModalWyboruProduktu = false;
+
+    private Timer? odliczanieTimer;
+    private string czasPozostalyDisplay = "00:00:00";
+    private bool czyCzasPrzekroczony = false;
+
+    private string? komunikat;
+    private bool czyBlad;
+
+
+    private async Task HandleZnajdzAktywnaWizyte()
+    {
+        if (string.IsNullOrWhiteSpace(numerOpaskiDoWyszukania)) return;
+
+        try
+        {
+            var znalezionaWizyta = await WizytaService.PobierzAktywnaWizyteAsync(numerOpaskiDoWyszukania);
+            if (znalezionaWizyta != null)
+            {
+                aktywnaWizyta = znalezionaWizyta;
+                UruchomOdliczanie();
+                komunikat = $"Załadowano aktywną sesję dla opaski {numerOpaskiDoWyszukania}.";
+                czyBlad = false;
+            }
+            else
+            {
+                komunikat = "Nie znaleziono aktywnej wizyty dla tej opaski.";
+                czyBlad = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd: {ex.Message}";
+            czyBlad = true;
+        }
+        numerOpaskiDoWyszukania = "";
+    }
+
+    private async Task HandleRozpocznijWizyte(int produktId)
+    {
+        pokazModalWyboruProduktu = false; // Zamknij modal
+
+        if (string.IsNullOrWhiteSpace(numerOpaskiInput)) return;
+
+        try
+        {
+            aktywnaWizyta = await WizytaService.RozpocznijWizyteAsync(numerOpaskiInput, produktId);
+            komunikat = $"Wizyta {aktywnaWizyta.Id} rozpoczęta dla opaski {aktywnaWizyta.Opaska.NumerOpaski}.";
+            czyBlad = false;
+
+            // Reset pól i uruchomienie odliczania
+            idKlientaInput = "";
+            numerOpaskiInput = "";
+            UruchomOdliczanie();
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd rozpoczynania wizyty: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+
+    private async Task HandleSkorzystajZAtrakcji(int bramkaId, Atrakcja atrakcja)
+    {
+        if (aktywnaWizyta == null) return;
+        try
+        {
+            string opisZdarzenia = $"Skorzystano z: {atrakcja.Nazwa}";
+
+            // Wywołujemy nową, precyzyjną metodę serwisu
+            await WizytaService.ZarejestrujSkorzystanieZAtrakcjiAsync(aktywnaWizyta.Id, bramkaId, atrakcja.Id, opisZdarzenia);
+
+            var logMessage = $"[{DateTime.UtcNow:T}] Skorzystano z atrakcji: <b>{atrakcja.Nazwa}</b>.";
+            komunikat = $"Zarejestrowano użycie: {atrakcja.Nazwa}";
+            czyBlad = false;
+
+            if (atrakcja.WymagaDodatkowejOplaty)
+            {
+                logMessage += " <span class='text-danger'>(Naliczono opłatę)</span>";
+                komunikat += " Naliczono opłatę.";
+            }
+
+            logiWizyty.Add(logMessage);
+
+            // Odświeżamy stan wizyty, aby zobaczyć ewentualne nowe kary
+            aktywnaWizyta = await WizytaService.PobierzAktywnaWizyteAsync(aktywnaWizyta.Opaska!.NumerOpaski);
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Ta metoda jest poprawna dla tego komponentu,
+        // bo na starcie potrzebuje tylko listy bramek.
+        try
+        {
+            dostepneBramkiZAtrakcjami = await BramkaService.PobierzBramkiZAtrakcjamiAsync();
+        
+        }
+        catch (Exception ex)
+        {
+            // Obsługa błędu, np. zapis do logów lub wyświetlenie komunikatu
+            Console.WriteLine($"Nie udało się załadować bramek: {ex.Message}");
+        }
+    }
+
+
+    private void UruchomOdliczanie()
+    {
+        // Sprawdzamy, czy bilet ma limit czasu
+        if (aktywnaWizyta?.PlanowanyCzasWyjscia == null)
+        {
+            czasPozostalyDisplay = "Bez limitu";
+            return;
+        }
+
+        var czasKonca = aktywnaWizyta.PlanowanyCzasWyjscia.Value;
+
+        odliczanieTimer = new Timer(_ =>
+        {
+            var pozostalo = czasKonca - DateTime.UtcNow;
+            if (pozostalo.TotalSeconds <= 0)
+            {
+                czyCzasPrzekroczony = true;
+                // Wyświetlamy ujemny czas, aby pokazać o ile został przekroczony
+                czasPozostalyDisplay = $"-{pozostalo.Negate():hh\\:mm\\:ss}";
+            }
+            else
+            {
+                czyCzasPrzekroczony = false;
+                czasPozostalyDisplay = $"{pozostalo:hh\\:mm\\:ss}";
+            }
+            // Informujemy Blazor o zmianie, bo timer działa w osobnym wątku
+            InvokeAsync(StateHasChanged);
+        }, null, 0, 1000); // Uruchom natychmiast, powtarzaj co sekundę
+    }
+
+    private async Task HandlePrzejscieBramka(int bramkaId, string nazwaBramki)
+    {
+        if (aktywnaWizyta == null) return;
+        try
+        {
+            await WizytaService.ZarejestrujPrzejscieBramkaAsync(aktywnaWizyta.Id, bramkaId, "PRZEJSCIE_BRAMKA", $"Przejście przez: {nazwaBramki}");
+
+            var logMessage = $"[{DateTime.UtcNow:T}] Przejście przez bramkę: <b>{nazwaBramki}</b>.";
+            komunikat = $"Zarejestrowano zdarzenie: {nazwaBramki}";
+            logiWizyty.Add(logMessage);
+            czyBlad = false;
+
+
+            aktywnaWizyta = await WizytaService.PobierzAktywnaWizyteAsync(aktywnaWizyta.Opaska!.NumerOpaski);
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    private async Task HandleNaliczKare(int typKaryId, decimal kwota, string opis)
+    {
+        if (aktywnaWizyta == null) return;
+        try
+        {
+            await KaraService.NaliczKareAsync(aktywnaWizyta.Id, typKaryId, kwota, opis);
+            komunikat = $"Naliczono karę: {opis}";
+            logiWizyty.Add($"[{DateTime.UtcNow:T}] <span class='text-danger'>Naliczono karę: <b>{opis}</b> ({kwota:C})</span>.");
+            czyBlad = false;
+
+            // --- KLUCZOWA LINIA ---
+            // Odświeżamy obiekt aktywnej wizyty, aby pobrać z bazy nowo dodaną karę
+            aktywnaWizyta = await WizytaService.PobierzAktywnaWizyteAsync(aktywnaWizyta.Opaska!.NumerOpaski);
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd: {ex.Message}";
+            czyBlad = true;
+        }
+    }
+
+    private async Task HandleZakonczWizyte()
+    {
+        if (aktywnaWizyta?.Opaska == null) return;
+
+        // KROK 1: Pobierz nieopłacone kary PRZED zakończeniem wizyty
+        karyDoZaplaty = await KaraService.PobierzNieoplaconeKaryAsync(aktywnaWizyta.Id);
+        sumaKar = karyDoZaplaty.Sum(k => k.Kwota);
+
+        // KROK 2: Jeśli nie ma kar, po prostu zakończ i zresetuj
+        if (sumaKar == 0)
+        {
+            await WizytaService.ZakonczWizyteAsync(aktywnaWizyta.Opaska.NumerOpaski);
+            komunikat = "Wizyta zakończona pomyślnie. Brak dodatkowych opłat.";
+            czyBlad = false;
+            ResetujSymulator();
+        }
+        else
+        {
+            // KROK 3: Jeśli są kary, wyświetl panel płatności
+            komunikat = $"Klient ma do zapłaty {sumaKar:C} za dodatkowe opłaty.";
+            czyBlad = false; // To nie błąd, to informacja
+                             // Nie resetujemy symulatora, czekamy na płatność
+        }
+    }
+
+    private void ResetujSymulator()
+    {
+        aktywnaWizyta = null;
+        karyDoZaplaty = null;
+        sumaKar = 0;
+        wybranaMetodaPlatnosci = null;
+        aktywnaWizyta = null;
+        odliczanieTimer?.Dispose();
+        numerOpaskiInput = "";
+        czyCzasPrzekroczony = false;
+        czasPozostalyDisplay = "00:00:00";
+		logiWizyty.Clear(); // Wyczyść logi po zakończeniu wizyty
+    }
+
+    public void Dispose()
+    {
+        odliczanieTimer?.Dispose();
+    }
+
+    private async Task HandleWyszukajBilety()
+    {
+        if (!int.TryParse(idKlientaInput, out int klientId))
+        {
+            komunikat = "ID Klienta musi być liczbą.";
+            czyBlad = true;
+            return;
+        }
+
+        komunikat = null;
+        dostepneProdukty = null; // Pokaż spinner w modalu
+        pokazModalWyboruProduktu = true; // Otwórz modal
+
+        try
+        {
+            // Wstrzyknij IKlientService, jeśli jeszcze go nie masz
+            dostepneProdukty = await KlientService.PobierzDostepneProduktyKlientaAsync(klientId);
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd wyszukiwania biletów: {ex.Message}";
+            czyBlad = true;
+            pokazModalWyboruProduktu = false; // Zamknij modal w razie błędu
+        }
+    }
+
+    private async Task HandleZaplacZaKary()
+    {
+        if (aktywnaWizyta == null || karyDoZaplaty == null || !karyDoZaplaty.Any()) return;
+
+        czyPrzetwarzaPlatnosc = true;
+
+        try
+        {
+            // Użyj serwisu transakcji, aby stworzyć płatność i zaktualizować kary
+            await TransakcjaService.ZrealizujPlatnoscZaKaryAsync(aktywnaWizyta.KlientId, aktywnaWizyta.Id, karyDoZaplaty, wybranaMetodaPlatnosci!);
+
+            // Po udanej płatności, teraz możemy bezpiecznie zakończyć wizytę
+            await WizytaService.ZakonczWizyteAsync(aktywnaWizyta.Opaska!.NumerOpaski);
+
+            komunikat = "Płatność przyjęta, wizyta zakończona pomyślnie.";
+            czyBlad = false;
+            ResetujSymulator();
+        }
+        catch (Exception ex)
+        {
+            komunikat = $"Błąd podczas przetwarzania płatności: {ex.Message}";
+            czyBlad = true;
+        }
+        finally
+        {
+            czyPrzetwarzaPlatnosc = false;
+        }
+    }
+
+
+}

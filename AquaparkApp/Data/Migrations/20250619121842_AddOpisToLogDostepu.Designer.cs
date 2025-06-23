@@ -4,6 +4,7 @@ using AquaparkApp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AquaparkApp.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250619121842_AddOpisToLogDostepu")]
+    partial class AddOpisToLogDostepu
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -324,13 +327,7 @@ namespace AquaparkApp.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("typ");
 
-                    b.Property<int?>("TypKaryPrzekroczeniaId")
-                        .HasColumnType("int")
-                        .HasColumnName("typKaryPrzekroczenia_id");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("TypKaryPrzekroczeniaId");
 
                     b.ToTable("OfertaCennikowa");
                 });
@@ -877,15 +874,6 @@ namespace AquaparkApp.Migrations
                     b.Navigation("Bramka");
 
                     b.Navigation("Wizyta");
-                });
-
-            modelBuilder.Entity("AquaparkApp.Data.Models.OfertaCennikowa", b =>
-                {
-                    b.HasOne("AquaparkApp.Data.Models.TypKary", "TypKaryPrzekroczenia")
-                        .WithMany()
-                        .HasForeignKey("TypKaryPrzekroczeniaId");
-
-                    b.Navigation("TypKaryPrzekroczenia");
                 });
 
             modelBuilder.Entity("AquaparkApp.Data.Models.Platnosc", b =>

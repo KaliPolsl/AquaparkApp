@@ -12,4 +12,6 @@ public interface IKlientService
     Task<int> DodajKlientaAsync(Klient nowyKlient);
     Task ZaktualizujKlientaAsync(Klient klientDoAktualizacji);
     Task UsunKlientaAsync(int klientId);
+
+    Task<List<ProduktZakupiony>> PobierzDostepneProduktyKlientaAsync(int klientId);
 }

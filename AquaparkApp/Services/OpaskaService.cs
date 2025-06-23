@@ -26,7 +26,7 @@ public class OpaskaService(IDbContextFactory<ApplicationDbContext> dbFactory) : 
         {
             NumerOpaski = numerOpaski,
             Status = "Dostępna", // Domyślny status nowej opaski
-            DataWydania = DateTime.Now
+            DataWydania = DateTime.UtcNow
         };
 
         await dbContext.Opaski.AddAsync(nowaOpaska);
@@ -50,7 +50,7 @@ public class OpaskaService(IDbContextFactory<ApplicationDbContext> dbFactory) : 
 
             if (nowyStatus == "Wycofana")
             {
-                opaska.DataWycofania = DateTime.Now;
+                opaska.DataWycofania = DateTime.UtcNow;
             }
 
             await dbContext.SaveChangesAsync();

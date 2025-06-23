@@ -1,0 +1,206 @@
+﻿@page "/zarzadzaj-atrakcjami"
+@using Microsoft.AspNetCore.Authorization
+@using AquaparkApp.Data.Models
+@using AquaparkApp.Services
+@attribute [Authorize(Roles = "Admin, Pracownik")] 
+@rendermode InteractiveServer
+
+
+
+@inject IAtrakcjaService AtrakcjaService
+@inject IBramkaService BramkaService
+
+
+
+<PageTitle>Zarządzanie Atrakcjami</PageTitle>
+
+<h1 class="mb-4"><span class="bi bi-water me-2"></span>Zarządzanie Atrakcjami</h1>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Lista Atrakcji w Systemie</h5>
+        <button class="btn btn-primary" @onclick="() => OtworzModal()">
+            <span class="bi bi-plus-circle"></span> Dodaj Nową Atrakcję
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Nazwa</th>
+                    <th class="text-center">Maks. Osób</th>
+                    <th>Status Płatności</th>
+                    <th class="text-end">Akcje</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (atrakcje == null)
+                {
+                    <tr><td colspan="4" class="text-center p-4">Ładowanie...</td></tr>
+                }
+                else
+                {
+                    @foreach (var atrakcja in atrakcje)
+                    {
+                        <tr>
+                            <td class="fw-bold">@atrakcja.Nazwa</td>
+                            <td class="text-center">@atrakcja.MaxOsób</td>
+                            <td>
+                                @if (atrakcja.WymagaDodatkowejOplaty)
+                                {
+                                    <span class="badge bg-danger">Płatna (@atrakcja.CenaDodatkowa?.ToString("C"))</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">W cenie biletu</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-warning" @onclick="() => OtworzModal(atrakcja)">Edytuj</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL DO DODAWANIA/EDYCJI -->
+@if (czyModalOtwarty)
+{
+    <div class="modal fade show" style="display:block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <EditForm Model="edytowanaAtrakcja" OnValidSubmit="ZapiszAtrakcje">
+                    <DataAnnotationsValidator />
+                    <div class="modal-header">
+                        <h5 class="modal-title">@(edytowanaAtrakcja.Id == 0 ? "Dodaj Nową Atrakcję" : "Edytuj Atrakcję")</h5>
+                        <button type="button" class="btn-close" @onclick="ZamknijModal"></button>
+                    </div>
+                    <div class="modal-body">
+
+                        
+                        <hr>
+                        <h6>Przypisz do Bramek</h6>
+                        <div class="row">
+                            @foreach (var bramka in wszystkieBramki)
+                            {
+                                <div class="col-md-4">
+                                    <div class="form-check">
+                                        <input type="checkbox" class="form-check-input" id="bramka-@bramka.Id"
+                                               checked="@(wybraneBramki.ContainsKey(bramka.Id) && wybraneBramki[bramka.Id])"
+                                               @onchange="(e) => wybraneBramki[bramka.Id] = (bool)e.Value" />
+                                        <label class="form-check-label" for="bramka-@bramka.Id">@bramka.Nazwa</label>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Nazwa Atrakcji</label>
+                            <InputText class="form-control" @bind-Value="edytowanaAtrakcja.Nazwa" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Opis</label>
+                            <InputTextArea class="form-control" @bind-Value="edytowanaAtrakcja.Opis" />
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Maksymalna liczba osób</label>
+                                <InputNumber class="form-control" @bind-Value="edytowanaAtrakcja.MaxOsób" />
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="form-check form-switch mb-3">
+                            <InputCheckbox class="form-check-input" @bind-Value="edytowanaAtrakcja.WymagaDodatkowejOplaty" />
+                            <label class="form-check-label">Atrakcja wymaga dodatkowej opłaty</label>
+                        </div>
+                        @if (edytowanaAtrakcja.WymagaDodatkowejOplaty)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">Cena dodatkowa (zł)</label>
+                                <InputNumber class="form-control" @bind-Value="edytowanaAtrakcja.CenaDodatkowa" />
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="ZamknijModal">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Zapisz</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<Atrakcja>? atrakcje;
+    private bool czyModalOtwarty = false;
+    private Atrakcja edytowanaAtrakcja = new();
+    private List<Bramka> wszystkieBramki = new(); // Lista wszystkich bramek do wyboru
+    private Dictionary<int, bool> wybraneBramki = new(); // Słownik do śledzenia zaznaczonych checkboxów
+
+    protected override async Task OnInitializedAsync()
+    {
+        var atrakcjeTask = ZaladujDane();
+        var bramkiTask = BramkaService.PobierzWszystkieBramkiAsync(); // Używamy teraz nowej metody
+
+        await Task.WhenAll(atrakcjeTask, bramkiTask);
+
+        wszystkieBramki = await bramkiTask;
+    }
+
+    private async Task ZaladujDane()
+    {
+        atrakcje = await AtrakcjaService.PobierzWszystkieAtrakcjeAsync();
+    }
+
+    private async Task OtworzModal(Atrakcja? atrakcja = null)
+    {
+        if (atrakcja == null)
+        {
+            edytowanaAtrakcja = new Atrakcja();
+            wybraneBramki.Clear();
+        }
+        else
+        {
+            // Pobieramy pełny obiekt z powiązaniami
+            var pelnaAtrakcja = await AtrakcjaService.PobierzAtrakcjePoIdAsync(atrakcja.Id);
+            edytowanaAtrakcja = pelnaAtrakcja ?? new Atrakcja();
+
+            // Zaznaczamy checkboxy dla bramek, które są już powiązane
+            wybraneBramki = wszystkieBramki.ToDictionary(
+                b => b.Id,
+                b => edytowanaAtrakcja.Bramki.Any(powiazana => powiazana.Id == b.Id)
+            );
+        }
+        czyModalOtwarty = true;
+    }
+
+    private void ZamknijModal()
+    {
+        czyModalOtwarty = false;
+    }
+
+    private async Task ZapiszAtrakcje()
+    {
+        // Krok 1: Zapisz lub zaktualizuj samą atrakcję
+        if (edytowanaAtrakcja.Id == 0)
+        {
+            await AtrakcjaService.DodajAtrakcjeAsync(edytowanaAtrakcja);
+        }
+        else
+        {
+            await AtrakcjaService.ZaktualizujAtrakcjeAsync(edytowanaAtrakcja);
+        }
+
+        // Krok 2: Zaktualizuj powiązania z bramkami
+        var listaWybranychId = wybraneBramki.Where(kvp => kvp.Value).Select(kvp => kvp.Key).ToList();
+        await AtrakcjaService.ZaktualizujPowiazaniaZBramkamiAsync(edytowanaAtrakcja.Id, listaWybranychId);
+
+        ZamknijModal();
+        await ZaladujDane();
+    }
+}

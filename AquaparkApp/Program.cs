@@ -49,6 +49,8 @@ builder.Services.AddScoped<ITransakcjaService, TransakcjaService>();
 builder.Services.AddScoped<IOpaskaService, OpaskaService>();
 builder.Services.AddScoped<IWizytaService, WizytaService>();
 builder.Services.AddScoped<IKoszykService, KoszykService>();
+builder.Services.AddScoped<IKaraService, KaraService>();
+builder.Services.AddScoped<IBramkaService, BramkaService>();
 
 var app = builder.Build();
 

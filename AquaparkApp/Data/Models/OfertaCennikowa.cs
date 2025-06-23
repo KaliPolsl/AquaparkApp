@@ -35,11 +35,19 @@ public partial class OfertaCennikowa
     [Column("karaZaMinutePrzekroczenia", TypeName = "decimal(10, 2)")]
     public decimal? KaraZaMinutePrzekroczenia { get; set; }
 
+
     [Column("obowiazujeOd", TypeName = "datetime")]
     public DateTime ObowiazujeOd { get; set; }
 
     [Column("obowiazujeDo", TypeName = "datetime")]
     public DateTime? ObowiazujeDo { get; set; }
+
+    [Column("typKaryPrzekroczenia_id")] // Dobra praktyka nazywania kolumn FK
+    public int? TypKaryPrzekroczeniaId { get; set; }
+
+    // --- OPCJONALNA WŁAŚCIWOŚĆ NAWIGACYJNA ---
+    [ForeignKey("TypKaryPrzekroczeniaId")]
+    public virtual TypKary? TypKaryPrzekroczenia { get; set; }
 
     [InverseProperty("Oferta")]
     public virtual ICollection<Kara> Kary { get; set; } = new List<Kara>();

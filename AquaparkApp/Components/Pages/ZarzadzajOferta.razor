@@ -61,7 +61,7 @@
                                 <td><span class="badge bg-info">@oferta.Typ</span></td>
                                 <td>@oferta.CenaPodstawowa.ToString("C")</td>
                                 <td>
-                                    @if (oferta.ObowiazujeDo != null && oferta.ObowiazujeDo < DateTime.Now)
+                                    @if (oferta.ObowiazujeDo != null && oferta.ObowiazujeDo < DateTime.UtcNow)
                                     {
                                         <span class="badge bg-secondary">Nieaktywna</span>
                                     }
@@ -158,7 +158,7 @@ else if (aktywnaZakladka == "Zniżki")
     {
         if (oferta == null)
         {
-            edytowanaOferta = new OfertaCennikowa { Typ = "Bilet", ObowiazujeOd = DateTime.Now }; // Domyślne wartości
+            edytowanaOferta = new OfertaCennikowa { Typ = "Bilet", ObowiazujeOd = DateTime.UtcNow }; // Domyślne wartości
         }
         else
         {

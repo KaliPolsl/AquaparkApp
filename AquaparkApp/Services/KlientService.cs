@@ -93,4 +93,18 @@ public class KlientService(IDbContextFactory<ApplicationDbContext> dbContextFact
             await dbContext.SaveChangesAsync();
         }
     }
+
+    public async Task<List<ProduktZakupiony>> PobierzDostepneProduktyKlientaAsync(int klientId)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        return await db.ProduktyZakupione
+            .Include(p => p.Oferta)
+            .Where(p => p.KlientId == klientId &&
+                        p.Status == "Nowy" &&
+                        p.WaznyOd <= DateTime.UtcNow &&
+                       (p.WaznyDo == null || p.WaznyDo >= DateTime.UtcNow))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
 }

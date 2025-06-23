@@ -28,8 +28,12 @@ public partial class LogDostepu
     public DateTime CzasZdarzenia { get; set; }
 
     [Column("typZdarzenia")]
-    [StringLength(10)]
+    [StringLength(20)]
     public string TypZdarzenia { get; set; } = null!;
+
+    [Column("opis")]
+    [StringLength(200)] // Dłuższe pole na czytelny opis
+    public string? Opis { get; set; }
 
     [ForeignKey("BramkaId")]
     [InverseProperty("LogiDostepu")]

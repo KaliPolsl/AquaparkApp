@@ -24,9 +24,11 @@ public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory
                 KlientId = klient.Id,
                 OfertaId = oferta.Id,
                 CenaZakupu = oferta.CenaPodstawowa,
-                DataZakupu = DateTime.Now,
+                DataZakupu = DateTime.UtcNow,
                 Status = "Nowy",
-                // ... pozostałe pola ...
+                PozostaloWejsc = oferta.LiczbaWejsc,
+                WaznyOd = DateTime.UtcNow,
+                WaznyDo = DateTime.UtcNow.AddYears(1)
             }).ToList();
 
             await dbContext.ProduktyZakupione.AddRangeAsync(produktyDoZapisu);
@@ -36,7 +38,7 @@ public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory
             {
                 KlientId = klient.Id,
                 KwotaCalkowita = pozycjeKoszyka.Sum(p => p.CenaPodstawowa),
-                DataPlatnosci = DateTime.Now,
+                DataPlatnosci = DateTime.UtcNow,
                 MetodaPlatnosci = metodaPlatnosci,
                 StatusPlatnosci = "Oczekuje" // Np. oczekuje na płatność online
             };
@@ -97,10 +99,11 @@ public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory
                     OfertaId = oferta.Id,
                     ZnizkaId = znizkaId,
                     CenaZakupu = cenaPoZnizce, // Zapisujemy cenę FAKTYCZNIE zapłaconą za produkt
-                    DataZakupu = DateTime.Now,
+                    DataZakupu = DateTime.UtcNow,
                     Status = "Nowy",
                     PozostaloWejsc = oferta.LiczbaWejsc,
-                    WaznyOd = DateTime.Now
+                    WaznyOd = DateTime.UtcNow, // Bilet/karnet jest ważny od momentu zakupu
+                    WaznyDo = DateTime.UtcNow.AddYears(1) // Ważność ustawiona na rok od dzisiaj
                 };
                 produktyDoZapisu.Add(produkt);
                 kwotaFinalna += cenaPoZnizce; // Sumujemy ceny po zniżce
@@ -113,7 +116,7 @@ public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory
             {
                 KlientId = klientId,
                 KwotaCalkowita = kwotaFinalna,
-                DataPlatnosci = DateTime.Now,
+                DataPlatnosci = DateTime.UtcNow,
                 MetodaPlatnosci = metodaPlatnosci,
                 StatusPlatnosci = "Zapłacono"
             };
@@ -140,4 +143,54 @@ public class TransakcjaService(IDbContextFactory<ApplicationDbContext> dbFactory
             throw;
         }
     }
+
+    public async Task<int> ZrealizujPlatnoscZaKaryAsync(int klientId, int wizytaId, List<Kara> karyDoOplacenia, string metodaPlatnosci)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var kwotaCalkowita = karyDoOplacenia.Sum(k => k.Kwota);
+
+            // 1. Stwórz Płatność
+            var platnosc = new Platnosc
+            {
+                KlientId = klientId,
+                KwotaCalkowita = kwotaCalkowita,
+                DataPlatnosci = DateTime.UtcNow,
+                MetodaPlatnosci = metodaPlatnosci,
+                StatusPlatnosci = "Zapłacono"
+            };
+            db.Platnosci.Add(platnosc);
+            await db.SaveChangesAsync();
+
+            // 2. Stwórz PozycjePłatności, łącząc kary z płatnością
+            var pozycjePlatnosci = karyDoOplacenia.Select(k => new PozycjaPlatnosci
+            {
+                PlatnoscId = platnosc.Id,
+                KaraId = k.Id,
+                OpisPozycji = k.Opis ?? "Kara",
+                KwotaPozycji = k.Kwota
+            }).ToList();
+            await db.PozycjePlatnosci.AddRangeAsync(pozycjePlatnosci);
+
+            // 3. Zaktualizuj statusy kar
+            foreach (var kara in karyDoOplacenia)
+            {
+                var karaZBazy = await db.Kary.FindAsync(kara.Id);
+                if (karaZBazy != null) karaZBazy.StatusPlatnosci = "Zapłacono";
+            }
+
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return platnosc.Id;
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
 }

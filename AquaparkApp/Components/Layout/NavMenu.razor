@@ -18,24 +18,24 @@
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
+@*         <div class="nav-item px-3">
             <NavLink class="nav-link" href="counter">
                 <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
             </NavLink>
-        </div>
+        </div> *@
 
 
-        <div class="nav-item px-3">
+@*         <div class="nav-item px-3">
             <NavLink class="nav-link" href="weather">
                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
             </NavLink>
-        </div>
+        </div> *@
 
-        <div class="nav-item px-3">
+@*         <div class="nav-item px-3">
             <NavLink class="nav-link" href="auth">
                 <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
             </NavLink>
-        </div>
+        </div> *@
 
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="atrakcje">
@@ -49,10 +49,22 @@
             </NavLink>
         </div>
 
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="contact">
+                <span class="bi bi-envelope-fill-nav-menu" aria-hidden="true"></span> Kontakt
+            </NavLink>
+		</div>
+
         <AuthorizeView>
             <Authorized>
 
                 <hr /> <!-- Dodajemy separator dla czytelności -->
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="symulator-klienta">
+                        <span class="bi bi-joystick" aria-hidden="true"></span> Symulator Klienta
+                    </NavLink>
+                </div>
 
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="sklep">
@@ -81,16 +93,23 @@
                 </div>
 
              
-                <div class="nav-item px-3">
+@*                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="symulator-bramek">
                         <span class="bi bi-qr-code-scan" aria-hidden="true"></span> Symulator Bramek
                     </NavLink>
-                </div>
+                </div> *@
 
                 <!-- W NavMenu.razor, wewnątrz <Authorized> -->
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="zarzadzaj-oferta">
                         <span class="bi bi-tools" aria-hidden="true"></span> Zarządzaj Ofertą
+                    </NavLink>
+                </div>
+
+                <!-- W NavMenu.razor, wewnątrz <Authorized> -->
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="zarzadzaj-atrakcjami">
+                        <span class="bi bi-grid-3x3-gap-fill" aria-hidden="true"></span> Zarządzaj Atrakcjami
                     </NavLink>
                 </div>
 
